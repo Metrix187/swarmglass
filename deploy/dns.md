@@ -6,19 +6,19 @@
 
 | name | type | value | ttl | notes |
 |---|---|---|---|---|
-| `swarmglass` | A | `64.181.212.228` | 3600 | quantara-nood (Oracle ARM VM) — public honeypot |
-| `research.swarmglass` | A | `64.181.212.228` | 3600 | research console; the proxy allowlists it, DNS is public and that is fine |
+| `swarmglass` | A | `<quantara-nood public ip>` | 3600 | quantara-nood (Oracle ARM VM) — public honeypot |
+| `research.swarmglass` | A | `<quantara-nood public ip>` | 3600 | research console; the proxy allowlists it, DNS is public and that is fine |
 
 Both point at the same box; Caddy routes by hostname. If the VM ever moves, change two A records.
 
-**Do not** add `swarmglass` as a cPanel *subdomain* (Domains → Subdomains). That would create a docroot on the shared host and an A record pointing at `89.117.19.82`, i.e. the wrong server. Add plain A records in the Zone Editor instead. (marginalia.quantara.cv *is* a cPanel subdomain because it is served from that host; swarmglass is not.)
+**Do not** add `swarmglass` as a cPanel *subdomain* (Domains → Subdomains). That would create a docroot on the shared host and an A record pointing at the shared host, i.e. the wrong server. Add plain A records in the Zone Editor instead. (marginalia.quantara.cv *is* a cPanel subdomain because it is served from that host; swarmglass is not.)
 
 ## Verification
 
 ```bash
 dig +short swarmglass.quantara.cv @ns1.appliednetwork1.com
 dig +short swarmglass.quantara.cv @1.1.1.1
-curl -sI --resolve swarmglass.quantara.cv:443:64.181.212.228 https://swarmglass.quantara.cv/wiki/Main_Page | head -5
+curl -sI --resolve swarmglass.quantara.cv:443:<quantara-nood public ip> https://swarmglass.quantara.cv/wiki/Main_Page | head -5
 ```
 
 The zone's negative TTL is 86400, so a resolver that looked the name up *before* the record existed (your phone hotspot, notably) will serve NXDOMAIN for a day. Public resolvers see it immediately. Test with `--resolve` before concluding anything is broken.
