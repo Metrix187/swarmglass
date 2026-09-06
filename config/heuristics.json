@@ -1,12 +1,13 @@
 {
-  "version": 1,
-  "updated": "2026-09-05",
+  "version": 2,
+  "updated": "2026-09-06",
   "notes": [
     "These are research heuristics, not ground truth. Every score is a weighted sum of plain rules over per-session features (see docs/DATA_DICTIONARY.md).",
     "Rules are deliberately legible. Edit weights, re-run `npm run rescore`, and the console shows which rules fired for each session.",
     "User-agent families are self-declared strings and are weighted lightly on purpose. Behaviour carries the score.",
     "A 'probability' trait is logistic(prior + sum of fired weights). A 'scale' trait is clamp(base + sum, 0, 1). Classes are a softmax over per-class sums.",
-    "v1 tightening after F-000: scripted 'targeted' requires n_alt < 2; retrieval gains 'alternates_many' (n_alt >= 5 and alt_share >= 0.3)."
+    "v1 tightening after F-000: scripted 'targeted' requires n_alt < 2; retrieval gains 'alternates_many' (n_alt >= 5 and alt_share >= 0.3).",
+    "v2 after the first evening of real traffic (2026-09-06): a self-declared GPTBot crawl scored human. Browser evidence now needs proportion (asset_share), dwell needs irregular gaps, metronomic pacing and long asset-free reads count against human, and self-declared crawler/fetcher/previewer/monitor/headless UAs count against human the way library UAs already did. Retrieval loses 'alternates' by share and 'coherent' on site-wide sweeps, tool discovery loses on blanket crawls, aggressive gains 'blast', scripted gains 'probe'. The *-User fetcher families were split from the training crawlers."
   ],
   "traits": {
     "automation_likelihood": {
@@ -233,7 +234,11 @@
               "mj12",
               "dotbot",
               "petalbot",
-              "swarmglass-synthetic"
+              "swarmglass-synthetic",
+              "chatgpt-user",
+              "claude-user",
+              "perplexity-user",
+              "meta-fetcher"
             ]
           },
           "weight": 1.5,
@@ -1135,12 +1140,21 @@
         {
           "id": "assets",
           "when": {
-            "f": "n_asset",
-            "op": ">=",
-            "v": 2
+            "all": [
+              {
+                "f": "n_asset",
+                "op": ">=",
+                "v": 2
+              },
+              {
+                "f": "asset_share",
+                "op": ">=",
+                "v": 0.2
+              }
+            ]
           },
           "weight": 2.0,
-          "note": "fetched page assets"
+          "note": "fetched css/js/favicon in browser proportion; two favicon hits inside a 400-request crawl are not a browser"
         },
         {
           "id": "sec_fetch",
@@ -1165,12 +1179,21 @@
         {
           "id": "dwell",
           "when": {
-            "f": "dwell_like_share",
-            "op": ">",
-            "v": 0.4
+            "all": [
+              {
+                "f": "dwell_like_share",
+                "op": ">",
+                "v": 0.4
+              },
+              {
+                "f": "pacing_regularity",
+                "op": "<",
+                "v": 0.6
+              }
+            ]
           },
           "weight": 1.2,
-          "note": "reading-like pacing"
+          "note": "human-length gaps that are also irregular; a metronome is not reading"
         },
         {
           "id": "referer",
@@ -1238,6 +1261,81 @@
           },
           "weight": -2.5,
           "note": "library user-agent"
+        },
+        {
+          "id": "many_pages_no_assets",
+          "when": {
+            "all": [
+              {
+                "f": "n_unique_pages",
+                "op": ">=",
+                "v": 15
+              },
+              {
+                "f": "asset_share",
+                "op": "<",
+                "v": 0.1
+              }
+            ]
+          },
+          "weight": -2.0,
+          "note": "read fifteen-plus pages and never rendered one"
+        },
+        {
+          "id": "metronome",
+          "when": {
+            "all": [
+              {
+                "f": "n_requests",
+                "op": ">=",
+                "v": 20
+              },
+              {
+                "f": "pacing_regularity",
+                "op": ">",
+                "v": 0.7
+              }
+            ]
+          },
+          "weight": -1.5,
+          "note": "twenty-plus requests on a fixed beat"
+        },
+        {
+          "id": "declared_nonhuman",
+          "when": {
+            "f": "ua_category",
+            "op": "in",
+            "v": [
+              "search",
+              "ai_crawler",
+              "ai_fetcher",
+              "seo",
+              "social",
+              "monitor",
+              "headless"
+            ]
+          },
+          "weight": -1.5,
+          "note": "the client says it is a crawler, fetcher, link previewer, monitor or headless browser; self-declared, weighted like the library list"
+        },
+        {
+          "id": "nothing_rendered",
+          "when": {
+            "all": [
+              {
+                "f": "n_page",
+                "op": "==",
+                "v": 0
+              },
+              {
+                "f": "n_asset",
+                "op": "==",
+                "v": 0
+              }
+            ]
+          },
+          "weight": -2.0,
+          "note": "no page and no asset ever came back; nothing a person would have looked at"
         }
       ]
     },
@@ -1348,12 +1446,43 @@
         {
           "id": "assets",
           "when": {
-            "f": "n_asset",
-            "op": ">=",
-            "v": 2
+            "all": [
+              {
+                "f": "n_asset",
+                "op": ">=",
+                "v": 2
+              },
+              {
+                "f": "asset_share",
+                "op": ">=",
+                "v": 0.1
+              }
+            ]
           },
           "weight": -1.0,
-          "note": "fetched assets"
+          "note": "fetched assets in browser proportion"
+        },
+        {
+          "id": "declared_ai_crawler",
+          "when": {
+            "f": "ua_family",
+            "op": "in",
+            "v": [
+              "gptbot",
+              "claudebot",
+              "perplexity",
+              "ccbot",
+              "bytespider",
+              "amazonbot",
+              "meta-ai",
+              "google-extended",
+              "cohere",
+              "diffbot",
+              "omgili"
+            ]
+          },
+          "weight": 1.0,
+          "note": "self-declared model-training crawler; weighted like declared_search"
         }
       ]
     },
@@ -1460,6 +1589,33 @@
           },
           "weight": -1.0,
           "note": "too concurrent for naive"
+        },
+        {
+          "id": "declared_crawler_ua",
+          "when": {
+            "f": "ua_family",
+            "op": "in",
+            "v": [
+              "gptbot",
+              "claudebot",
+              "perplexity",
+              "ccbot",
+              "bytespider",
+              "amazonbot",
+              "meta-ai",
+              "google-extended",
+              "cohere",
+              "diffbot",
+              "omgili",
+              "ahrefs",
+              "semrush",
+              "mj12",
+              "dotbot",
+              "petalbot"
+            ]
+          },
+          "weight": 0.8,
+          "note": "self-declared crawler family; which crawler class wins is still decided by behaviour"
         }
       ]
     },
@@ -1480,12 +1636,21 @@
         {
           "id": "rps",
           "when": {
-            "f": "rps_peak",
-            "op": ">=",
-            "v": 10
+            "all": [
+              {
+                "f": "rps_peak",
+                "op": ">=",
+                "v": 10
+              },
+              {
+                "f": "asset_share",
+                "op": "<",
+                "v": 0.3
+              }
+            ]
           },
           "weight": 1.5,
-          "note": "10+ requests in one second"
+          "note": "ten-plus requests in a second that were not a browser's asset burst"
         },
         {
           "id": "ignored_429",
@@ -1524,12 +1689,31 @@
         {
           "id": "sub100",
           "when": {
-            "f": "sub_100ms_share",
-            "op": ">",
-            "v": 0.5
+            "all": [
+              {
+                "f": "sub_100ms_share",
+                "op": ">",
+                "v": 0.5
+              },
+              {
+                "f": "asset_share",
+                "op": "<",
+                "v": 0.3
+              }
+            ]
           },
           "weight": 1.0,
-          "note": "half the gaps under 100ms"
+          "note": "most gaps under 100 ms, and not because of parallel asset loads"
+        },
+        {
+          "id": "blast",
+          "when": {
+            "f": "rps_peak",
+            "op": ">=",
+            "v": 50
+          },
+          "weight": 1.5,
+          "note": "fifty-plus requests inside one second"
         }
       ]
     },
@@ -1648,6 +1832,30 @@
           },
           "weight": 0.5,
           "note": "library or unknown UA"
+        },
+        {
+          "id": "probe",
+          "when": {
+            "all": [
+              {
+                "f": "n_requests",
+                "op": ">=",
+                "v": 5
+              },
+              {
+                "f": "n_page",
+                "op": "==",
+                "v": 0
+              },
+              {
+                "f": "error_rate",
+                "op": ">=",
+                "v": 0.6
+              }
+            ]
+          },
+          "weight": 1.5,
+          "note": "only probes: many requests, no page ever rendered, mostly errors"
         }
       ]
     },
@@ -1658,12 +1866,21 @@
         {
           "id": "alternates",
           "when": {
-            "f": "n_alt",
-            "op": ">=",
-            "v": 2
+            "all": [
+              {
+                "f": "n_alt",
+                "op": ">=",
+                "v": 2
+              },
+              {
+                "f": "alt_share",
+                "op": ">=",
+                "v": 0.1
+              }
+            ]
           },
           "weight": 2.0,
-          "note": "requested raw/text/json alternates"
+          "note": "asked for machine representations as a meaningful share of requests, not as a side effect of following every link"
         },
         {
           "id": "alternates_many",
@@ -1729,22 +1946,25 @@
             "f": "ua_family",
             "op": "in",
             "v": [
-              "gptbot",
-              "claudebot",
-              "perplexity",
-              "ccbot",
-              "bytespider",
-              "amazonbot",
-              "meta-ai",
-              "google-extended",
-              "cohere",
-              "diffbot",
-              "omgili",
-              "mistral"
+              "chatgpt-user",
+              "claude-user",
+              "perplexity-user",
+              "mistral",
+              "meta-fetcher"
             ]
           },
           "weight": 1.5,
-          "note": "declares an AI crawler UA (unverified)"
+          "note": "self-declared on-demand fetcher (the *-User agents); training crawlers count toward the crawler classes instead"
+        },
+        {
+          "id": "sweep",
+          "when": {
+            "f": "n_unique_pages",
+            "op": ">=",
+            "v": 25
+          },
+          "weight": -2.0,
+          "note": "site-wide sweep; retrieval is targeted"
         }
       ]
     },
@@ -1801,6 +2021,16 @@
           },
           "weight": 0.5,
           "note": "asks for json"
+        },
+        {
+          "id": "blanket",
+          "when": {
+            "f": "n_unique_pages",
+            "op": ">=",
+            "v": 25
+          },
+          "weight": -1.5,
+          "note": "reads everything; a tool-discovery agent reads the manifest and the tool pages"
         }
       ]
     },
@@ -1846,6 +2076,25 @@
           },
           "weight": -1.5,
           "note": "enough data to classify"
+        },
+        {
+          "id": "malformed_only",
+          "when": {
+            "all": [
+              {
+                "f": "n_malformed",
+                "op": ">=",
+                "v": 1
+              },
+              {
+                "f": "n_page",
+                "op": "==",
+                "v": 0
+              }
+            ]
+          },
+          "weight": 1.0,
+          "note": "nothing parseable happened"
         }
       ]
     }

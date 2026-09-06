@@ -1,5 +1,6 @@
 import { entropy, jaccard, ngrams } from '../util/text.ts';
 import { mean, median, percentile, stddev } from '../util/time.ts';
+import { familyCategory } from './ua.ts';
 
 // everything the scoring model sees. computed from persisted event rows only,
 // so `npm run rescore` reproduces exactly what the live path produced.
@@ -71,6 +72,7 @@ export function computeFeatures(session: SessionRow, events: EventRow[], pageInf
   f.n_requests = n;
   f.duration_ms = n ? (ev[n - 1] as EventRow).ts - (ev[0] as EventRow).ts : 0;
   f.ua_family = session.ua_family ?? 'none';
+  f.ua_category = familyCategory(f.ua_family as string);
   f.cookie_returned = Boolean(session.cookie_returned);
   f.synthetic = Boolean(session.synthetic);
 

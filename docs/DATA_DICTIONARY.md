@@ -61,6 +61,7 @@ Computed by `computeFeatures()` in `src/telemetry/features.ts` from the session'
 | feature | meaning |
 |---|---|
 | `ua_family` | self-declared family label |
+| `ua_category` | the family's category: `browser`, `search`, `ai_crawler` (corpus builders), `ai_fetcher` (the `*-User` on-demand agents), `seo`, `library`, `headless`, `social`, `monitor`, `synthetic`, `other` |
 | `cookie_returned`, `cookie_present_share` | |
 | `header_order_variants`, `mean_header_count` | distinct wire orders of header names |
 | `has_sec_fetch`, `has_client_hints`, `has_accept_language` | browser fetch-metadata presence |

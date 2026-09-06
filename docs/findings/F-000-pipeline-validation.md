@@ -1,5 +1,7 @@
 # F-000 — The pipeline classifies its nine calibration personas as designed
 
+> **Heuristics v2 (2026-09-06).** The rules below were tightened after the first real GPTBot crawl scored human; see the CHANGELOG entry. The persona diagonal was re-checked under v2 on a snapshot of the live database and holds with wider margins. The numbers in this note are the v1 numbers and are kept as the baseline.
+
 *Status: published in SGR-2026.09 · Experiment: none (calibration) · Seed: 2026.09.0 · Heuristics: v1 · Window: one synthetic run, 2026-09-05 · Traffic: synthetic only · Reproduce: `npm run synth -- --personas all --seed 1 --fast` on a fresh instance*
 
 ## Question

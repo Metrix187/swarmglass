@@ -3,7 +3,9 @@
 export interface UaRule {
   family: string;
   re: RegExp;
-  category: 'browser' | 'search' | 'ai_crawler' | 'seo' | 'library' | 'headless' | 'social' | 'monitor' | 'synthetic' | 'other';
+  // ai_crawler = builds a corpus (GPTBot, ClaudeBot, CCBot...). ai_fetcher = the *-User agents that pull one page
+  // on demand for a person. same vendors, very different behaviour, so they get different labels.
+  category: 'browser' | 'search' | 'ai_crawler' | 'ai_fetcher' | 'seo' | 'library' | 'headless' | 'social' | 'monitor' | 'synthetic' | 'other';
 }
 
 export const UA_RULES: UaRule[] = [
@@ -14,18 +16,23 @@ export const UA_RULES: UaRule[] = [
   { family: 'duckduckbot', re: /DuckDuckBot|DuckAssistBot/i, category: 'search' },
   { family: 'yandex', re: /YandexBot|YandexImages/i, category: 'search' },
   { family: 'baidu', re: /Baiduspider/i, category: 'search' },
-  { family: 'gptbot', re: /GPTBot|ChatGPT-User|OAI-SearchBot/i, category: 'ai_crawler' },
-  { family: 'claudebot', re: /ClaudeBot|Claude-User|Claude-SearchBot|anthropic-ai/i, category: 'ai_crawler' },
-  { family: 'perplexity', re: /PerplexityBot|Perplexity-User/i, category: 'ai_crawler' },
+  // fetchers first: none of these strings match the crawler regexes below, but keep the order obvious
+  { family: 'chatgpt-user', re: /ChatGPT-User/i, category: 'ai_fetcher' },
+  { family: 'claude-user', re: /Claude-User/i, category: 'ai_fetcher' },
+  { family: 'perplexity-user', re: /Perplexity-User/i, category: 'ai_fetcher' },
+  { family: 'meta-fetcher', re: /meta-externalfetcher/i, category: 'ai_fetcher' },
+  { family: 'gptbot', re: /GPTBot|OAI-SearchBot/i, category: 'ai_crawler' },
+  { family: 'claudebot', re: /ClaudeBot|Claude-SearchBot|anthropic-ai/i, category: 'ai_crawler' },
+  { family: 'perplexity', re: /PerplexityBot/i, category: 'ai_crawler' },
   { family: 'ccbot', re: /CCBot/i, category: 'ai_crawler' },
   { family: 'bytespider', re: /Bytespider|TikTokSpider/i, category: 'ai_crawler' },
   { family: 'amazonbot', re: /Amazonbot/i, category: 'ai_crawler' },
-  { family: 'meta-ai', re: /meta-externalagent|FacebookBot|meta-externalfetcher/i, category: 'ai_crawler' },
+  { family: 'meta-ai', re: /meta-externalagent|FacebookBot/i, category: 'ai_crawler' },
   { family: 'google-extended', re: /Google-Extended|Google-CloudVertexBot/i, category: 'ai_crawler' },
   { family: 'cohere', re: /cohere-ai/i, category: 'ai_crawler' },
   { family: 'diffbot', re: /Diffbot/i, category: 'ai_crawler' },
   { family: 'omgili', re: /omgili|webz\.io/i, category: 'ai_crawler' },
-  { family: 'mistral', re: /MistralAI-User/i, category: 'ai_crawler' },
+  { family: 'mistral', re: /MistralAI-User/i, category: 'ai_fetcher' },
   { family: 'ahrefs', re: /AhrefsBot/i, category: 'seo' },
   { family: 'semrush', re: /SemrushBot/i, category: 'seo' },
   { family: 'mj12', re: /MJ12bot/i, category: 'seo' },
@@ -69,4 +76,11 @@ export function uaFamily(ua: string | undefined | null): { family: string; categ
   for (const r of UA_RULES) if (r.re.test(ua)) return { family: r.family, category: r.category };
   if (/bot|crawl|spider|fetch|scan|agent|client/i.test(ua)) return { family: 'generic-bot', category: 'other' };
   return { family: 'unknown', category: 'other' };
+}
+
+const FAMILY_CATEGORY = new Map(UA_RULES.map((r) => [r.family, r.category] as const));
+
+// category of a stored family label, so a rescore sees exactly what the live path saw
+export function familyCategory(family: string | null | undefined): UaRule['category'] {
+  return (family && FAMILY_CATEGORY.get(family)) || 'other';
 }

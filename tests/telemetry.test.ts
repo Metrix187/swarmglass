@@ -6,7 +6,7 @@ import { testConfig } from '../src/config.ts';
 import { loadHeuristics, score, evalCond, validateHeuristics } from '../src/telemetry/scoring.ts';
 import { computeFeatures, type EventRow, type SessionRow } from '../src/telemetry/features.ts';
 import { describeCluster, type ClusterSession } from '../src/telemetry/cluster.ts';
-import { uaFamily } from '../src/telemetry/ua.ts';
+import { familyCategory, uaFamily } from '../src/telemetry/ua.ts';
 import { assertNoLeak, sanitizeSession } from '../src/publish/sanitize.ts';
 import { join } from 'node:path';
 
@@ -60,6 +60,13 @@ test('ua families are labels, not verdicts', () => {
   assert.equal(uaFamily('curl/8.0').family, 'curl');
   assert.equal(uaFamily('Mozilla/5.0 Chrome/128 Safari/537.36').family, 'chrome');
   assert.equal(uaFamily('').family, 'none');
+  // the vendor's crawler and the vendor's on-demand fetcher are different animals
+  assert.equal(uaFamily('Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; GPTBot/1.4; +https://openai.com/gptbot)').family, 'gptbot');
+  assert.equal(uaFamily('Mozilla/5.0 (compatible; ChatGPT-User/1.0; +https://openai.com/bot)').family, 'chatgpt-user');
+  assert.equal(uaFamily('Mozilla/5.0 (compatible; Claude-User/1.0)').family, 'claude-user');
+  assert.equal(familyCategory('gptbot'), 'ai_crawler');
+  assert.equal(familyCategory('chatgpt-user'), 'ai_fetcher');
+  assert.equal(familyCategory('nope'), 'other');
 });
 
 function ev(partial: Partial<EventRow> & { ts: number }): EventRow {
@@ -83,6 +90,30 @@ test('features + heuristics: a fast robots-ignoring crawl scores as automation',
   assert.ok(['naive_crawler', 'aggressive_crawler'].includes(s.likely_class), s.likely_class);
   assert.ok(s.traits.robots_compliance!.value < 0.5);
   assert.ok(s.traits.automation_likelihood!.evidence.some((e) => e.rule === 'fast_pacing'));
+});
+
+test('features + heuristics: a declared crawler on a two-second metronome is a crawler, not a person', () => {
+  // modelled on the first real GPTBot visit: hundreds of page requests, two-second beat, cookie returned,
+  // internal referers, a couple of asset hits, alternates as a side effect of following every link
+  const h = loadHeuristics(join(process.cwd(), 'config', 'heuristics.json'));
+  const events: EventRow[] = [];
+  let t = 0;
+  for (let i = 0; i < 160; i++) {
+    const p = 'P' + (i % 40);
+    events.push(ev({ ts: t, page_id: p, path: '/wiki/' + p, depth: 1 + (i % 3), referer: i ? '/wiki/P' + ((i - 1) % 40) : null, referer_internal: i ? 1 : 0, cookie_present: i ? 1 : 0, cookie_valid: i ? 1 : 0 }));
+    t += 2000;
+  }
+  events.push(ev({ ts: t, page_id: null, path: '/favicon.ico', resource_kind: 'asset', discover_class: null, depth: null }));
+  events.push(ev({ ts: t + 2000, page_id: null, path: '/skins/antfarm/logo.svg', resource_kind: 'asset', discover_class: null, depth: null }));
+  for (let i = 0; i < 6; i++) events.push(ev({ ts: t + 4000 + i * 2000, page_id: 'P' + i, path: '/wiki/P' + i + '.json', resource_kind: 'alt', negotiated: 'json' }));
+  const f = computeFeatures({ ...session, ua: 'GPTBot/1.4', ua_family: 'gptbot', cookie_returned: 1 }, events, pageInfo);
+  assert.equal(f.ua_category, 'ai_crawler');
+  assert.ok((f.pacing_regularity as number) > 0.7, `pacing ${f.pacing_regularity}`);
+  const s = score(h, f);
+  assert.ok(['naive_crawler', 'search_bot', 'aggressive_crawler'].includes(s.likely_class), `${s.likely_class} ${JSON.stringify(s.classes)}`);
+  assert.ok(s.classes.human_browser! < 0.1, `human ${s.classes.human_browser}`);
+  const fired = s.class_evidence.human_browser!.map((e) => e.rule);
+  for (const id of ['metronome', 'many_pages_no_assets', 'declared_nonhuman']) assert.ok(fired.includes(id), `expected ${id} in ${fired.join(',')}`);
 });
 
 test('features + heuristics: a browser-like session scores human', () => {
