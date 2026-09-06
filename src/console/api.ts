@@ -335,7 +335,8 @@ export function motifs(d: QueryDeps, range: Range, synthetic: 'real' | 'syntheti
   const sessions = d.db.all<{ id: string }>(`SELECT id FROM sessions WHERE started_at >= ? AND started_at <= ? AND n_requests >= ?${sf.sql} ORDER BY started_at DESC LIMIT 600`, range.since, range.until, n, ...sf.args);
   const counts = new Map<string, { n: number; sessions: Set<string> }>();
   for (const s of sessions) {
-    const seq = d.db.all<{ k: string }>('SELECT COALESCE(page_id, resource_kind || ":" || path) AS k FROM events WHERE session_id = ? ORDER BY ts LIMIT 500', s.id).map((r) => r.k);
+    // single quotes on purpose: the sqlite node ships has double-quoted string literals turned off, so ":" is a column
+    const seq = d.db.all<{ k: string }>("SELECT COALESCE(page_id, resource_kind || ':' || path) AS k FROM events WHERE session_id = ? ORDER BY ts LIMIT 500", s.id).map((r) => r.k);
     for (const g of new Set(ngrams(seq, n))) {
       const c = counts.get(g) ?? { n: 0, sessions: new Set() };
       c.n++;

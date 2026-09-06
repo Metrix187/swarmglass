@@ -13,7 +13,8 @@
       else if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
       else if (v !== null && v !== undefined) el.setAttribute(k, String(v));
     }
-    for (const c of children.flat()) {
+    // flatten all the way down: views hand in map()s of arrays of nodes, and appendChild(array) throws
+    for (const c of children.flat(Infinity)) {
       if (c === null || c === undefined || c === false) continue;
       el.appendChild(typeof c === 'string' || typeof c === 'number' ? document.createTextNode(String(c)) : c);
     }
@@ -168,7 +169,9 @@
       } catch (err) { /* keep polling */ }
       setTimeout(tick, 2000);
     }
-    tick();
+    // first poll on a timer, not inline: the view is built in a detached fragment and only lands in the document
+    // after this function resolves, so an inline tick() sees "not in body" and quietly never polls
+    setTimeout(tick, 0);
   };
 
   views.sessions = async (root, params) => {

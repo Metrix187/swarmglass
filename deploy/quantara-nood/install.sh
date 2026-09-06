@@ -71,11 +71,12 @@ fi
 
 echo "== start"
 docker compose up -d --force-recreate 2>&1 | grep -vi "variable is not set" | tail -1
+# probe the console's /healthz, never the public listener: a host-side curl arrives from the docker gateway, not
+# loopback, so the app would record it as a visitor
 for i in $(seq 1 12); do
   sleep 3
-  if curl -sf -m 3 http://127.0.0.1:8080/api/v1/status >/dev/null; then echo "   app answering on 127.0.0.1:8080 ($i)"; break; fi
+  if curl -sf -m 3 http://127.0.0.1:8081/healthz >/dev/null; then echo "   app answering ($i)"; break; fi
 done
-curl -s -m 5 -o /dev/null -w '   public main page: %{http_code}\n' http://127.0.0.1:8080/wiki/Main_Page
 curl -s -m 5 -o /dev/null -w '   console healthz:  %{http_code}\n' http://127.0.0.1:8081/healthz
 
 if ! grep -q "swarmglass.quantara.cv" /etc/caddy/Caddyfile; then

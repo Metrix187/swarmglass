@@ -291,6 +291,9 @@ test('research console: auth, csrf, api, sanitized export', async () => {
   assert.equal(ext.status, 200);
   const syn = await (await c('/api/synthetic', { headers: auth })).json() as { personas: string[] };
   assert.ok(syn.personas.includes('browser_human'));
+  const motifs = await c('/api/motifs?range=24h&synthetic=all&n=2', { headers: auth });
+  assert.equal(motifs.status, 200, 'motifs sql has to run on the sqlite build node ships (no double-quoted literals)');
+  assert.ok(Array.isArray((await motifs.json() as { motifs: unknown[] }).motifs));
   const settings = await (await c('/api/settings', { headers: auth })).json() as { privacy: { ipMode: string } };
   assert.equal(settings.privacy.ipMode, 'truncate_hash');
   const logout = await c('/logout', { method: 'POST', headers: { ...auth, 'content-type': 'application/x-www-form-urlencoded' }, body: `csrf=${me.csrf}` });
