@@ -7,7 +7,7 @@ Three static files and two edits, all in the site repo at `D:\quantara-site`, de
 | path | what |
 |---|---|
 | `site/projects/swarmglass/index.html` | the overview page: what it is, why, how it works, how to read the numbers, ethics, reproduce. rose editorial skin, no external requests, inline svg only. |
-| `site/swarmglass/index.html` | a `<meta refresh>` stub so `quantara.cv/swarmglass/` reaches the mirror. the cPanel `.htaccess` is off limits, so this is the only redirect available. `noindex`. **Held back** (kept only in this repo, plus its sitemap entry) until the subdomain resolves; a refresh to a dead host is worse than a 404. |
+| `site/swarmglass/index.html` | a `<meta refresh>` stub so `quantara.cv/swarmglass/` reaches the mirror. the cPanel `.htaccess` is off limits, so this is the only redirect available. `noindex`. Live since 2026-09-06, once the subdomain resolved. |
 | `site/index.html` | one new row in the tools index (08 · swarmglass) linking to `/projects/swarmglass/` |
 | `site/sitemap.xml` | entries for `/projects/swarmglass/` and `/swarmglass/` |
 

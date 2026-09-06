@@ -49,7 +49,7 @@ export const UA_RULES: UaRule[] = [
   { family: 'scrapy', re: /Scrapy/i, category: 'library' },
   { family: 'go-http', re: /Go-http-client/i, category: 'library' },
   { family: 'curl', re: /^curl\//i, category: 'library' },
-  { family: 'wget', re: /^Wget\//i, category: 'library' },
+  { family: 'wget', re: /^Wget(\/|$)/i, category: 'library' }, // busybox sends a bare "Wget"
   { family: 'node-fetch', re: /node-fetch|undici/i, category: 'library' },
   { family: 'axios', re: /axios\//i, category: 'library' },
   { family: 'java', re: /Java\/|okhttp|Apache-HttpClient/i, category: 'library' },

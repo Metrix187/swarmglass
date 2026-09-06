@@ -26,8 +26,10 @@ USER swarmglass
 VOLUME ["/data"]
 
 EXPOSE 8080 8081
+# the console's /healthz is never recorded; probing the public listener would write the container's own
+# heartbeat into the telemetry as a "visitor"
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD wget -q -O - http://127.0.0.1:8080/api/v1/status >/dev/null 2>&1 || exit 1
+  CMD wget -q -O - http://127.0.0.1:8081/healthz >/dev/null 2>&1 || exit 1
 
 ENTRYPOINT ["/sbin/tini", "--"]
 CMD ["node", "--disable-warning=ExperimentalWarning", "src/main.ts"]

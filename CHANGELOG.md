@@ -19,9 +19,13 @@ First complete build.
 - **quantara.cv**: `/projects/swarmglass/` overview page, `/swarmglass/` redirect stub, homepage row, sitemap entries (staged in the site repo, not yet pushed).
 - **seed 2026.09.0**.
 
-### known TODOs (operator)
+### deployed 2026-09-06
 
-- `SWARMGLASS_CONSOLE_PASSWORD_HASH`, `SWARMGLASS_CONTACT_EMAIL` in the server `.env`.
-- Caddy `basic_auth` hash and `remote_ip` ranges for the console.
-- Two A records in cPanel's Zone Editor.
-- Push the quantara.cv pages with `deploy/push.py`.
+- Live on quantara-nood: `swarmglass.quantara.cv` (mirror) and `research.swarmglass.quantara.cv` (console, edge basic-auth + app login), DNS-only records in Cloudflare, Let's Encrypt via Caddy.
+- quantara.cv: `/projects/swarmglass/`, the tools-index row, and the `/swarmglass/` redirect stub are live.
+- Validation against the live stack: all nine personas classified as designed; a cross-session canary transfer recorded.
+
+### still open (operator)
+
+- `remote_ip` allowlist on the console's Caddy block once the research networks are known.
+- `SWARMGLASS_CONTACT_EMAIL` if `security.txt` should name a mailbox.

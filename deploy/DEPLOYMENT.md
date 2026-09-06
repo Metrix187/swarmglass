@@ -39,6 +39,23 @@ Two supported shapes. **Option A is the one to use.**
    ```
    Then open `https://research.swarmglass.quantara.cv` → synthetic and check the confusion matrix. Synthetic sessions never mix with real ones.
 
+## As deployed (2026-09-06)
+
+Live. `swarmglass.quantara.cv` and `research.swarmglass.quantara.cv` are DNS-only A records **in Cloudflare** (the zone moved there; the cPanel copy is inert, see `dns.md`), both pointing at quantara-nood. Let's Encrypt certificates via Caddy; the container runs from `/opt/swarmglass` with `data/` on the host.
+
+| where | what |
+|---|---|
+| `/opt/swarmglass/.env` | production config; the scrypt hash is single-quoted (compose interpolates `$` otherwise) |
+| `/opt/swarmglass/.secrets.txt` (mode 600) | edge password, console password, synth token — read it over ssh, it is never printed anywhere |
+| `/etc/caddy/Caddyfile` | the two site blocks from `caddy/Caddyfile.optionA`; backup next to it as `Caddyfile.pre-swarmglass-<stamp>` |
+| `/opt/swarmglass/data/` | sqlite + app logs, owned by the container user (100:101) |
+
+Opening the console: `https://research.swarmglass.quantara.cv` asks for the **edge** basic-auth first (user `researcher`, edge password), then the app's own login (user `researcher`, console password). Both in `.secrets.txt`.
+
+Still open on the hardening list: a `remote_ip` allowlist on the console block once the research networks are known (the commented block in `Caddyfile.optionA`), and `SWARMGLASS_CONTACT_EMAIL` if you want a mailbox in `security.txt` instead of the project page.
+
+Things that bit during the first deploy, now baked into `install.sh`: `caddy hash-password` needs `--plaintext` when there is no terminal; an access-log `output file` block passes `caddy validate` but fails the reload, so there is none; compose's env-file interpolation eats an unquoted `$scrypt$…` hash.
+
 ## What the container can and cannot do
 
 - Runs as an unprivileged user, read-only root filesystem, all capabilities dropped, `no-new-privileges`, memory and pid limits. The only writable path is `/data` (SQLite + logs).

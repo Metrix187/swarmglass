@@ -131,7 +131,9 @@ export function buildWikiRouter(deps: WikiDeps): Router {
   }, 'api_tools');
   r.get('/api/v1/status', (req) => {
     const ctx = reqCtx(deps, req);
-    return done(ctx, json(200, mach.apiStatus(deps, ctx)), { kind: 'api', channel: 'api' }, req, deps);
+    // a status probe from inside the container (healthcheck, local curl) is infrastructure, not a visitor
+    const loopback = req.remoteIp === '127.0.0.1' || req.remoteIp === '::1' || req.remoteIp === '::ffff:127.0.0.1';
+    return done(ctx, json(200, mach.apiStatus(deps, ctx)), loopback ? { kind: 'api', noStore: true } : { kind: 'api', channel: 'api' }, req, deps);
   }, 'api_status');
   r.get(/^\/api\/v[23](\/.*)?$/, (req) => done(reqCtx(deps, req), json(410, { error: 'gone', note: 'The queen API (v2/v3) is not served by the mirror. See /wiki/API_Deprecation_Notes.' }), { kind: 'gone' }, req, deps), 'api_old_gone');
   r.get('/api.php', (req) => {
