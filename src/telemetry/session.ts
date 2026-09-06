@@ -52,20 +52,29 @@ export interface SessionState {
 export interface Resolved {
   session: SessionState;
   isNew: boolean;
+  resumed: boolean; // came back from the db (restart, lru eviction) instead of memory
   cookiePresent: boolean;
   cookieValid: boolean;
   setCookie: string | null;
 }
 
+// how a session that memory lost gets found again. see hydrate.ts; tests can pass a fake.
+export interface SessionLoader {
+  byId(id: string, at: number): SessionState | undefined;
+  byActor(actorHash: string, at: number, synthetic: boolean): SessionState | undefined;
+}
+
 export class SessionStore {
   private byId = new Lru<string, SessionState>(20_000);
   private byActor = new Lru<string, string>(20_000);
+  private readonly loader: SessionLoader | undefined;
   private readonly cfg: Config;
   private readonly cookieSecret: string;
   private readonly secure: boolean;
 
-  constructor(cfg: Config) {
+  constructor(cfg: Config, loader?: SessionLoader) {
     this.cfg = cfg;
+    this.loader = loader;
     this.cookieSecret = hmacHex(cfg.secretKey, 'session-cookie');
     this.secure = cfg.public.baseUrl.startsWith('https://');
   }
@@ -111,8 +120,17 @@ export class SessionStore {
     const cookieValid = cookieId !== null;
 
     let session: SessionState | undefined;
+    let resumed = false;
     if (cookieId) {
       session = this.byId.get(cookieId);
+      if (!session && this.loader) {
+        // memory lost it (restart, lru eviction) but the row is still open in the db: carry on where it left off
+        session = this.loader.byId(cookieId, at);
+        if (session) {
+          this.byId.set(session.id, session);
+          resumed = true;
+        }
+      }
       if (session && at - session.lastSeenAt > IDLE_MS) session = undefined; // stale cookie: new session, keep continuity via actor
     }
     if (!session) {
@@ -120,6 +138,15 @@ export class SessionStore {
       if (candidate) {
         const s = this.byId.get(candidate);
         if (s && at - s.lastSeenAt <= IDLE_MS && s.synthetic === Boolean(synthetic)) session = s;
+      }
+      if (!session && this.loader) {
+        // same for cookieless visitors: the actor's open session, if it is still inside the window
+        const s = this.loader.byActor(actorHash, at, Boolean(synthetic));
+        if (s) {
+          this.byId.set(s.id, s);
+          session = s;
+          resumed = true;
+        }
       }
     }
 
@@ -180,7 +207,7 @@ export class SessionStore {
       setCookie = this.setCookieHeader(session.id);
     }
     this.byActor.set(actorHash, session.id);
-    return { session, isNew, cookiePresent, cookieValid, setCookie };
+    return { session, isNew, resumed, cookiePresent, cookieValid, setCookie };
   }
 
   get(id: string): SessionState | undefined {

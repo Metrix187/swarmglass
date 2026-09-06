@@ -40,7 +40,7 @@ flowchart TB
 ## Request lifecycle (public)
 
 1. **Parse.** `src/http/server.ts` builds a bounded `Req`: raw header order, first-value headers, cookies, normalized path (base path stripped), query, client ip resolved through trusted proxies only.
-2. **Gate.** `Telemetry.gate` resolves the session (cookie → actor fingerprint within a 30-minute idle window → new), tags synthetic traffic if the shared token matches, and applies a token-bucket rate limit per truncated address. A 429 is itself a recorded event.
+2. **Gate.** `Telemetry.gate` resolves the session (cookie → actor fingerprint within a 30-minute idle window → new; a session that memory has lost to a restart or an LRU eviction is rehydrated from the database while it is still inside that window), tags synthetic traffic if the shared token matches, and applies a token-bucket rate limit per truncated address. A 429 is itself a recorded event.
 3. **Route.** The router matches the path. Every handler builds a `ReqCtx` (`src/wiki/context.ts`): the actor's experiment arms, the variables in force for the page, a canary factory (route-scoped or session-scoped), and the experiment-driven link injections for this page.
 4. **Render.** The skin (`render.ts`) and markdown renderer produce HTML; the machine module produces robots/sitemaps/feeds/manifests. Every canary placed is pushed to `ctx.exposures`.
 5. **Respond.** The server merges middleware headers (session cookie), sends, and calls `onResponse`.

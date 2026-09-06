@@ -10,6 +10,7 @@ import { acceptProfile } from '../http/negotiate.ts';
 import { malformationFlags } from '../http/security.ts';
 import { extraHeaderFields, refererFields, sanitizeQuery } from './privacy.ts';
 import { SessionStore, MAX_SEQ, type SessionState } from './session.ts';
+import { sessionLoader } from './hydrate.ts';
 import { CanaryService, type Canary, type Sighting } from './canary.ts';
 import { LiveBus } from './bus.ts';
 import { RateLimiter } from '../http/security.ts';
@@ -50,7 +51,7 @@ export class Telemetry {
   private readonly publicHosts: string[];
   private exposureCache = new Map<string, Set<string>>(); // canary -> session ids (bounded via sessions LRU semantics)
   private seenRuns = new Set<string>();
-  stats = { requests: 0, sightings: 0, newSessions: 0, limited: 0, malformed: 0 };
+  stats = { requests: 0, sightings: 0, newSessions: 0, resumed: 0, limited: 0, malformed: 0 };
 
   constructor(opts: { cfg: Config; db: Db; writer: BufferedWriter; log: Logger; canaries: CanaryService }) {
     this.cfg = opts.cfg;
@@ -58,7 +59,7 @@ export class Telemetry {
     this.writer = opts.writer;
     this.log = opts.log;
     this.canaries = opts.canaries;
-    this.sessions = new SessionStore(opts.cfg);
+    this.sessions = new SessionStore(opts.cfg, sessionLoader(opts.db));
     this.limiter = new RateLimiter(opts.cfg.limits.rateRps, opts.cfg.limits.rateBurst);
     const hosts: string[] = [];
     try {
@@ -85,6 +86,10 @@ export class Telemetry {
     const resolved = this.sessions.resolve(req, synthetic);
     req.state.session = resolved.session;
     req.state.sessionNew = resolved.isNew;
+    if (resolved.resumed) {
+      this.stats.resumed++;
+      this.log.info('session resumed from db', { id: resolved.session.id.slice(0, 10), requests: resolved.session.nRequests });
+    }
     req.state.cookiePresent = resolved.cookiePresent;
     req.state.cookieValid = resolved.cookieValid;
     req.state.synthetic = synthetic;

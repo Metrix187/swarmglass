@@ -66,6 +66,33 @@ test('every seed page renders without error', async () => {
   }
 });
 
+test('a session survives memory loss: the cookie resumes it from the db instead of starting a new one', async () => {
+  const first = await get('/wiki/Main_Page');
+  const cookie = first.headers.get('set-cookie')!.split(';')[0]!;
+  const id = cookie.split('=')[1]!.split('.')[0]!;
+  await get('/wiki/Tool_Registry', { headers: { cookie } });
+  flush();
+  const before = app.telemetry.sessions.get(id);
+  assert.ok(before, 'session is in memory');
+  const requestsBefore = before!.nRequests;
+  const rows = () => app.db.get<{ n: number }>('SELECT COUNT(*) AS n FROM sessions WHERE actor_hash = ?', before!.actorHash)!.n;
+  const rowsBefore = rows();
+  const resumedBefore = app.telemetry.stats.resumed;
+  app.telemetry.sessions.evict(id); // exactly what a restart or an lru eviction does to memory
+  assert.equal(app.telemetry.sessions.get(id), undefined);
+  const r = await get('/wiki/Colony_Glossary', { headers: { cookie } });
+  assert.equal(r.status, 200);
+  flush();
+  const after = app.telemetry.sessions.get(id);
+  assert.ok(after, 'the session came back from the db');
+  assert.equal(after!.nRequests, requestsBefore + 1, 'counters carry on');
+  for (const p of ['Main_Page', 'Tool_Registry', 'Colony_Glossary']) assert.ok(after!.pages.has(p), `page set rebuilt: ${p}`);
+  assert.ok(after!.exposed.size > 0, 'canary exposures rebuilt');
+  assert.equal(rows(), rowsBefore, 'no second session row for the same visitor');
+  assert.equal(app.telemetry.stats.resumed, resumedBefore + 1);
+  assert.equal(app.db.get<{ session_id: string }>('SELECT session_id FROM events WHERE page_id = ? ORDER BY ts DESC LIMIT 1', 'Colony_Glossary')!.session_id, id);
+});
+
 test('machine channels: robots, sitemaps, feeds, manifests, api', async () => {
   const robots = await (await get('/robots.txt')).text();
   assert.ok(robots.includes('Disallow: /wiki/Do_Not_Index'));

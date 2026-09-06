@@ -25,6 +25,14 @@ First complete build.
 - quantara.cv: `/projects/swarmglass/`, the tools-index row, and the `/swarmglass/` redirect stub are live.
 - Validation against the live stack: all nine personas classified as designed; a cross-session canary transfer recorded.
 
+### fixed 2026-09-06 (first evening of real traffic)
+
+- console: motifs view returned 500. The n-gram query used a double-quoted SQL literal, which the sqlite build inside node treats as a column name.
+- console: settings view crashed on render. The DOM helper flattened nested child arrays one level deep; it now flattens fully (motifs had the same shape waiting).
+- console: live view never polled. It checked for its own presence in the document before the router had attached it.
+- installer: readiness probe hits the console `/healthz` instead of the public status route, which was being recorded as a visitor from the docker gateway.
+- sessions survive restarts and LRU eviction: a valid cookie, or a cookieless actor still inside the idle window, rehydrates the open session from the database (counters, page set, canary exposures, channels fetched, last page) instead of starting a new one. Every deploy tonight had split the GPTBot crawl in two.
+
 ### heuristics v2 — 2026-09-06
 
 The first real GPTBot crawl (382 requests, two-second beat, cookie returned, two favicon hits) scored `human_browser` at 0.28. Every rule that let that happen was proportion-blind. Changes, all in `config/heuristics.json`:
