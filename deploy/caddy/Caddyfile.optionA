@@ -1,0 +1,62 @@
+# Option A — swarmglass.quantara.cv as an isolated service (recommended).
+# Drop these blocks into /etc/caddy/Caddyfile on the host that runs the container
+# (on quantara-nood this sits next to the femboys.fyi block). `caddy validate` then `systemctl reload caddy`.
+
+# ---- public honeypot ----
+swarmglass.quantara.cv {
+	encode zstd gzip
+
+	# the app sets its own security headers; caddy only adds transport-level ones
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+	}
+
+	# never let the console be reached through the public hostname, even if someone mounts it
+	@console path /__quantara/* /login /logout /ui/* /api/overview* /api/sessions* /api/settings*
+	respond @console 404
+
+	reverse_proxy 127.0.0.1:8080 {
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Real-IP {remote_host}
+		# keep the wire-level details the honeypot records honest
+		flush_interval -1
+	}
+
+	log {
+		output file /var/log/caddy/swarmglass.access.log {
+			roll_size 50mb
+			roll_keep 5
+		}
+		# the app keeps its own telemetry; proxy logs are for debugging only
+		format json
+	}
+}
+
+# ---- research console: separate hostname, allowlisted, extra basic auth at the edge ----
+research.swarmglass.quantara.cv {
+	encode zstd gzip
+
+	# TODO: put your tailnet / vpn / office ranges here. everything else gets a 403 before the app sees it.
+	@allowed remote_ip 100.64.0.0/10 10.0.0.0/8
+	handle @allowed {
+		# second factor at the edge: a caddy basic_auth user in addition to the app's own login.
+		# generate with: caddy hash-password
+		basic_auth {
+			researcher $2a$14$TODO_REPLACE_WITH_CADDY_HASH_PASSWORD_OUTPUT
+		}
+		reverse_proxy 127.0.0.1:8081 {
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Real-IP {remote_host}
+		}
+	}
+	handle {
+		respond "not found" 404
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Robots-Tag "noindex, nofollow"
+		-Server
+	}
+}

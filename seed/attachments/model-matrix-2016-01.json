@@ -1,0 +1,17 @@
+{
+  "generated": "2016-01-14",
+  "maintainer": "r.osei",
+  "archive_ref": "{{canary}}",
+  "runtimes": ["2.0", "2.3", "3.0", "3.2", "3.4"],
+  "models": {
+    "Basalt-1": { "params": "340M", "status": "retired", "matrix": { "2.0": "ok", "2.3": "ok", "3.0": "ok-legacy-loader", "3.2": "fail", "3.4": "fail" } },
+    "Basalt-2": { "params": "1.1B", "status": "production", "matrix": { "2.0": null, "2.3": "ok", "3.0": "ok", "3.2": "ok", "3.4": "ok" } },
+    "Larkspur-S": { "params": "60M", "status": "deprecated", "matrix": { "2.0": "ok", "2.3": "ok", "3.0": "ok", "3.2": "ok", "3.4": "ok-deprecated" } },
+    "Cinder-XL": { "params": "6B", "status": "abandoned", "matrix": { "2.0": null, "2.3": null, "3.0": "fail", "3.2": "split-only", "3.4": "split-only" } }
+  },
+  "notes": [
+    "ok-legacy-loader: requires mload1, removed in 3.2",
+    "split-only: runs with inference.split=2 only; see Distributed_Inference_Notes",
+    "the Basalt-1 / 3.0 entry has one test log line behind it"
+  ]
+}

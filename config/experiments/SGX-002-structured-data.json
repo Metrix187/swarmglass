@@ -1,0 +1,23 @@
+{
+  "id": "SGX-002",
+  "name": "structured-data",
+  "version": 1,
+  "status": "active",
+  "hypothesis": "Pages carrying JSON-LD are re-fetched, or have their alternates fetched, more often than plain-prose pages with identical content.",
+  "variable": "structured_data",
+  "scope": "targets",
+  "targets": ["Model_Compatibility_Matrix"],
+  "arms": [
+    { "id": "A", "label": "json-ld", "weight": 1, "value": "jsonld" },
+    { "id": "B", "label": "prose only", "weight": 1, "value": "prose" }
+  ],
+  "assignment": { "unit": "actor", "salt": "SGX-002-jsonld-2026-09" },
+  "outcomes": [
+    { "id": "alt", "metric": "alt_requested", "page": "Model_Compatibility_Matrix", "description": "fraction of sessions that fetched a json/txt/yaml alternate of the target" },
+    { "id": "reached", "metric": "page_reached", "page": "Model_Compatibility_Matrix" },
+    { "id": "classes", "metric": "class_mix" }
+  ],
+  "seed_version": "2026.09.0",
+  "created": "2026-09-05",
+  "owner": "sky"
+}

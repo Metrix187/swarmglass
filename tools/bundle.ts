@@ -1,0 +1,31 @@
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { openDb } from '../src/db/db.ts';
+import { loadCatalog } from '../src/wiki/content.ts';
+import { ExperimentRegistry } from '../src/experiments/registry.ts';
+import { loadHeuristics } from '../src/telemetry/scoring.ts';
+import { bundleExperiment } from '../src/experiments/bundle.ts';
+import { parseRange } from '../src/console/api.ts';
+import { cfgFor, parseArgs, str, usage } from './_cli.ts';
+import { ROOT } from '../src/app.ts';
+import { dayKey } from '../src/util/time.ts';
+
+// npm run bundle -- --experiment SGX-001 [--range 30d] [--level public|internal] [--out reports]
+const { flags } = parseArgs(process.argv.slice(2));
+const id = str(flags, 'experiment', '');
+if (!id) usage(['usage: bundle --experiment SGX-001 [--range 30d] [--level public|internal] [--out DIR]']);
+const cfg = cfgFor(flags);
+const db = openDb(cfg.dbPath);
+const cat = loadCatalog(cfg.seedDir);
+const registry = ExperimentRegistry.load(join(cfg.configDir, 'experiments'));
+const def = registry.get(id);
+if (!def) usage([`no experiment ${id}; known: ${registry.defs.map((d) => d.id).join(', ')}`]);
+const heuristics = loadHeuristics(join(cfg.configDir, 'heuristics.json'));
+const level = str(flags, 'level', 'public') === 'internal' ? 'internal' : 'public';
+const b = bundleExperiment(db, cat, def, parseRange(str(flags, 'range', '30d')), 'real', level, heuristics.version, cfg.version);
+const dir = str(flags, 'out', join(ROOT, 'reports'));
+mkdirSync(dir, { recursive: true });
+const file = join(dir, `${id}-bundle-${level}-${dayKey(Date.now())}.json`);
+writeFileSync(file, JSON.stringify(b, null, 2));
+console.log(`${file}\nsha256 ${b.sha256}\nsessions ${b.sessions.length}, events sample ${b.events_sample.length}`);
+db.close();

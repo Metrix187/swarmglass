@@ -1,0 +1,45 @@
+# Option B — quantara.cv/swarmglass behind the existing site's reverse proxy.
+# Only usable where quantara.cv is fronted by a proxy you control (it currently is not — the apex
+# is a cPanel host with no shell; see deploy/DEPLOYMENT.md). Kept so the move is a config change.
+#
+# App side: SWARMGLASS_BASE_PATH=/swarmglass and SWARMGLASS_PUBLIC_BASE_URL=https://quantara.cv
+# The app generates every link with the base path; the proxy must NOT strip it (use handle, not handle_path).
+
+quantara.cv {
+	encode zstd gzip
+
+	# ---- the honeypot namespace ----
+	handle /swarmglass* {
+		# the console must never be reachable under the public namespace
+		@console path /swarmglass/__quantara/*
+		respond @console 404
+
+		reverse_proxy 127.0.0.1:8080 {
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Real-IP {remote_host}
+		}
+	}
+
+	# ---- research console under an unguessable, allowlisted path ----
+	handle /__quantara/research* {
+		@allowed remote_ip 100.64.0.0/10 10.0.0.0/8
+		handle @allowed {
+			basic_auth {
+				researcher $2a$14$TODO_REPLACE_WITH_CADDY_HASH_PASSWORD_OUTPUT
+			}
+			# the console app is path-agnostic (hash routing + relative api calls), so strip the prefix
+			uri strip_prefix /__quantara/research
+			reverse_proxy 127.0.0.1:8081 {
+				header_up X-Forwarded-Proto {scheme}
+				header_up X-Real-IP {remote_host}
+			}
+		}
+		respond 404
+	}
+
+	# ---- the existing static site ----
+	handle {
+		root * /var/www/quantara.cv
+		file_server
+	}
+}

@@ -1,0 +1,11 @@
+node_modules
+data
+reports
+exports
+.git
+.env
+.env.local
+*.db
+*.log
+quantara-site
+research/datasets/*.jsonl

@@ -1,0 +1,33 @@
+ANTFARM incident write-up template (svanterpool, 2013-11)
+archive ref: {{canary}}
+
+Title:        Incident YYYY-MM: short name
+Dates:        start -> end (UTC)
+Duration:
+Impact:       what users/tasks saw
+Root cause:   one sentence
+
+Summary
+-------
+Three or four sentences. What broke, how we noticed, how long it took.
+
+Timeline (UTC)
+--------------
+| time | event |
+Keep it honest. Include the wrong turns.
+
+Root cause
+----------
+The thing. Then the thing behind the thing.
+
+Contributing factors
+--------------------
+Process, people, missing alerts.
+
+Remediation
+-----------
+1. Code change (release)
+2. Runbook change (section)
+3. Process change
+
+Link from Main_Page > Incidents. Update Known_Agent_Bugs.

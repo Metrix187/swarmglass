@@ -1,0 +1,11 @@
+# decommissioned forager records, exported 2015-12-01
+# archive ref: {{canary}}
+nodes:
+  - {name: forager-04, addr: 192.0.2.24, runtime: 1.4.2, decommissioned: 2012-05-14, reason: disk, last_hb: 1336987201, capabilities: [fetch, convert]}
+  - {name: forager-06, addr: 192.0.2.26, runtime: 2.0.1, decommissioned: 2012-11-02, reason: moved to build lab, last_hb: 1351814400, capabilities: [fetch, convert, index]}
+  - {name: forager-08, addr: 192.0.2.28, runtime: 2.1.0, decommissioned: 2013-08-20, reason: rack B decommission, last_hb: 1377000000, capabilities: [fetch, index]}
+  - {name: forager-10, addr: 192.0.2.30, runtime: 2.3.1, decommissioned: 2014-02-11, reason: disk, last_hb: 1392076800, capabilities: [fetch, convert, index]}
+  - {name: forager-11, addr: 192.0.2.31, runtime: 2.3.1, decommissioned: 2014-02-11, reason: disk, last_hb: 1392076805, capabilities: [fetch, convert, index]}
+  - {name: forager-13, addr: 192.0.2.33, runtime: 3.0.0, decommissioned: 2014-12-09, reason: memory too small for mload2, last_hb: 1418083200, capabilities: [fetch, index]}
+  - {name: forager-17, addr: 192.0.2.37, runtime: 3.0.2, decommissioned: 2015-03-03, reason: repurposed as phero-b, last_hb: 1425340800, capabilities: [fetch, index]}
+  - {name: forager-18, addr: 192.0.2.38, runtime: 3.2.0, decommissioned: 2015-12-01, reason: repurposed as build host, last_hb: 1448928000, capabilities: [fetch, convert, index]}

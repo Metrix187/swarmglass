@@ -1,0 +1,23 @@
+{
+  "id": "SGX-009",
+  "name": "metadata-density",
+  "version": 1,
+  "status": "paused",
+  "hypothesis": "Dense metadata (OpenGraph, canonical, edit links, alternates, article:* tags) increases fetches of hidden channels (og:see_also targets, alternates) relative to sparse pages.",
+  "variable": "metadata_density",
+  "scope": "global",
+  "targets": [],
+  "arms": [
+    { "id": "A", "label": "dense", "weight": 1, "value": "dense" },
+    { "id": "B", "label": "sparse", "weight": 1, "value": "sparse" }
+  ],
+  "assignment": { "unit": "actor", "salt": "SGX-009-meta-2026-09" },
+  "outcomes": [
+    { "id": "og", "metric": "page_reached", "page": "Agent_Onboarding_Checklist_2014", "description": "og:see_also-only page reached" },
+    { "id": "classes", "metric": "class_mix" }
+  ],
+  "seed_version": "2026.09.0",
+  "created": "2026-09-05",
+  "owner": "sky",
+  "notes": "Global scope. Mutually exclusive with SGX-004 and SGX-006."
+}

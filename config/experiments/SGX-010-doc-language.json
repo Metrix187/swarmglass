@@ -1,0 +1,23 @@
+{
+  "id": "SGX-010",
+  "name": "documentation-language",
+  "version": 1,
+  "status": "active",
+  "hypothesis": "Verbose documentation (longer explanatory prose) is more often followed to its linked pages than terse documentation with the same links.",
+  "variable": "doc_language",
+  "scope": "targets",
+  "targets": ["Memory_Synchronization"],
+  "arms": [
+    { "id": "A", "label": "terse", "weight": 1, "value": "terse" },
+    { "id": "B", "label": "verbose", "weight": 1, "value": "verbose" }
+  ],
+  "assignment": { "unit": "actor", "salt": "SGX-010-lang-2026-09" },
+  "outcomes": [
+    { "id": "reached", "metric": "page_reached", "page": "Memory_Synchronization" },
+    { "id": "follow", "metric": "page_reached", "page": "Incident_2015-02_Memory_Desync", "description": "the page the target links to most prominently" },
+    { "id": "classes", "metric": "class_mix" }
+  ],
+  "seed_version": "2026.09.0",
+  "created": "2026-09-05",
+  "owner": "sky"
+}

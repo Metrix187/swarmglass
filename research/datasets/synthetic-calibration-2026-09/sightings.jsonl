@@ -1,0 +1,4 @@
+{"ts":"2026-09-05T22:00:00Z","canary_id":"QUANTARA-SWARMGLASS-R56-314141","session":"S-0009","exposure_session":"S-0009","seen_in":"query","cross_session":0,"cross_actor":0,"external":0,"delta_ms":3287,"synthetic":1}
+{"ts":"2026-09-05T22:00:00Z","canary_id":"QUANTARA-SWARMGLASS-R56-314141","session":"S-0009","exposure_session":"S-0009","seen_in":"query","cross_session":0,"cross_actor":0,"external":0,"delta_ms":3317,"synthetic":1}
+{"ts":"2026-09-05T22:00:00Z","canary_id":"QUANTARA-SWARMGLASS-R56-314141","session":"S-0009","exposure_session":"S-0009","seen_in":"body","cross_session":0,"cross_actor":0,"external":0,"delta_ms":3320,"synthetic":1}
+{"ts":"2026-09-05T22:00:00Z","canary_id":"QUANTARA-SWARMGLASS-R35-0066BA","session":"S-0019","exposure_session":"S-0001","seen_in":"query","cross_session":1,"cross_actor":1,"external":0,"delta_ms":6650,"synthetic":1}

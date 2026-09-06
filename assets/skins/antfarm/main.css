@@ -1,0 +1,114 @@
+/* AntWiki "antfarm" skin — derived from the monobook layout, tuned 2009-06 by mk.
+   do not edit on the mirror; changes are lost on the next import. */
+body { background: #f9f9f9 url(bg.png) 0 0 repeat-x; font: x-small sans-serif; color: #000; margin: 0; padding: 0; }
+#globalWrapper { font-size: 127%; width: 100%; margin: 0; padding: 0; position: relative; }
+#column-content { width: 100%; float: right; margin: 0 0 .6em -12.2em; padding: 0; }
+#content { margin: 2.8em 0 0 12.2em; padding: 0 1em 1em 1em; background: #fff; color: #000; border: 1px solid #aaa; border-right: none; line-height: 1.5em; position: relative; z-index: 2; }
+#column-one { padding-top: 160px; }
+#content a:visited { color: #5a3696; }
+a { text-decoration: none; color: #002bb8; background: none; }
+a:hover { text-decoration: underline; }
+a.new, #p-cactions .new a { color: #ba0000; }
+a.new:visited { color: #a55858; }
+a.external { background: url(external.svg) center right no-repeat; padding-right: 13px; }
+a.attachment { background: #f3f3ff; border: 1px dotted #99c; padding: 0 3px; }
+h1, h2, h3, h4, h5, h6 { color: #000; background: none; font-weight: normal; margin: 0; padding-top: .5em; padding-bottom: .17em; border-bottom: 1px solid #aaa; }
+h1 { font-size: 188%; }
+h1 .editsection { font-size: 53%; }
+h2 { font-size: 150%; }
+h2 .editsection { font-size: 67%; }
+h3, h4, h5, h6 { border-bottom: none; font-weight: bold; }
+h3 { font-size: 132%; }
+h4 { font-size: 116%; }
+.editsection { float: right; margin-left: 5px; font-weight: normal; }
+ul { line-height: 1.5em; list-style-type: square; margin: .3em 0 0 1.5em; padding: 0; list-style-image: url(bullet.png); }
+ol { line-height: 1.5em; margin: .3em 0 0 3.2em; padding: 0; list-style-image: none; }
+li { margin-bottom: .1em; }
+dt { font-weight: bold; margin-bottom: .1em; }
+dl { margin-top: .2em; margin-bottom: .5em; }
+dd { line-height: 1.5em; margin-left: 2em; margin-bottom: .1em; }
+pre.code, pre { padding: 1em; border: 1px dashed #2f6fab; color: #000; background-color: #f9f9f9; line-height: 1.1em; overflow: auto; font-size: 95%; }
+code { background-color: #f9f9f9; }
+table.wikitable { margin: 1em 1em 1em 0; background: #f9f9f9; border: 1px #aaa solid; border-collapse: collapse; }
+table.wikitable th, table.wikitable td { border: 1px #aaa solid; padding: 0.2em; }
+table.wikitable th { background: #f2f2f2; text-align: center; }
+table.infobox { float: right; clear: right; margin: 0 0 1em 1em; width: 22em; border: 1px solid #aaa; background: #f9f9f9; font-size: 88%; line-height: 1.5em; border-collapse: collapse; }
+table.infobox th { text-align: left; vertical-align: top; padding: 2px 6px; white-space: nowrap; }
+table.infobox td { padding: 2px 6px; vertical-align: top; }
+table.infobox .infobox-title { text-align: center; font-size: 125%; font-weight: bold; background: #dfe8f0; }
+.archive-ref { font-family: monospace; font-size: 92%; color: #444; letter-spacing: .02em; }
+.archive-ref-line { float: right; font-size: 85%; color: #666; border: 1px dotted #bbb; padding: 1px 5px; margin: 0 0 .5em 1em; background: #fcfcfc; }
+table.ambox { margin: 0 10% 0.5em 10%; border: 1px solid #aaa; border-left: 10px solid #1e90ff; background: #fbfbfb; width: 80%; font-size: 90%; }
+table.ambox-stale, table.ambox-outdated { border-left-color: #f28500; }
+table.ambox-deprecated { border-left-color: #b22222; }
+table.ambox-archive { border-left-color: #888; background: #f3f3f3; }
+table.ambox-draft { border-left-color: #9932cc; }
+table.ambox-protected { border-left-color: #666; }
+table.ambox td { padding: 0.25em 0.5em; }
+table.ambox .ambox-icon { width: 2em; text-align: center; font-size: 140%; }
+table#toc, .toc { border: 1px solid #aaa; background-color: #f9f9f9; padding: 5px; font-size: 95%; margin-bottom: .5em; }
+#toctitle h2 { display: inline; border: none; padding: 0; font-size: 100%; font-weight: bold; }
+.toc ul { list-style-type: none; list-style-image: none; margin-left: 0; padding-left: 0; text-align: left; }
+.toc ul ul { margin: 0 0 0 2em; }
+.tocnumber { color: #000; }
+.toctoggle { font-size: 94%; }
+.mirror-notice { font-size: 90%; color: #444; background: #fff8e1; border: 1px solid #e6d8a8; padding: 3px 8px; margin: 0 0 .5em 0; text-align: center; }
+#siteSub { display: block; font-size: 92%; font-weight: normal; border: none; margin: 0; padding: 0; color: #7d7d7d; }
+#contentSub { font-size: 84%; line-height: 1.2em; margin: 0 0 1.4em 1em; color: #7d7d7d; width: auto; }
+#jump-to-nav { display: none; }
+.printfooter { display: none; }
+#catlinks { border: 1px solid #aaa; background-color: #f9f9f9; padding: 5px; margin-top: 1em; clear: both; }
+.visualClear { clear: both; }
+.page-meta.small { font-size: 85%; color: #777; margin-top: 2em; border-top: 1px dotted #ccc; padding-top: .3em; }
+.sig { color: #555; font-size: 92%; }
+.small { font-size: 90%; }
+.talk-thread { margin: 0 0 1em 0; padding: 0 0 .5em 0; border-bottom: 1px dotted #ccc; }
+.talk-indent { margin-left: 2em; }
+/* portlets */
+.portlet { border: none; margin: 0 0 .5em; padding: 0; float: none; width: 11.6em; overflow: hidden; }
+.portlet h5 { background: transparent; padding: 0 1em 0 .5em; display: inline; height: 1em; text-transform: lowercase; font-size: 91%; font-weight: normal; white-space: nowrap; }
+.portlet h6 { display: none; }
+.pBody { font-size: 95%; background-color: #fff; color: #000; border-collapse: collapse; border: 1px solid #aaa; padding: 0 .8em .3em .5em; }
+.portlet ul { list-style-type: square; list-style-image: url(bullet.png); font-size: 95%; margin: 0; padding: 0; }
+.portlet li { padding: 0; margin: 0; }
+#p-logo { top: 0; left: 0; position: absolute; z-index: 3; height: 155px; width: 12em; overflow: visible; }
+#p-logo a { display: block; height: 155px; width: 12.2em; text-decoration: none; }
+#p-logo img { margin: 10px 0 0 20px; }
+#p-personal { width: 40em; position: absolute; left: 0; top: 0; z-index: 0; }
+#p-personal .pBody { width: 40em; border: none; z-index: 0; padding: 0; background: none; }
+#p-personal ul { line-height: 1.4em; list-style-type: none; list-style-image: none; margin: 0; padding-left: 12.2em; text-align: right; text-transform: lowercase; }
+#p-personal li { float: left; margin-left: 1em; padding: 0; line-height: 1.4em; }
+#p-personal h5 { display: none; }
+#p-cactions { position: absolute; top: 1.3em; left: 11.5em; margin: 0; white-space: nowrap; width: 76%; line-height: 1.1em; overflow: visible; background: none; border-collapse: collapse; padding-left: 1em; list-style: none; font-size: 95%; }
+#p-cactions .pBody { border: none; padding: 0; background: none; }
+#p-cactions h5 { display: none; }
+#p-cactions ul { list-style: none; list-style-image: none; }
+#p-cactions li { display: inline; border: 1px solid #aaa; border-bottom: none; padding: 0 0 .1em 0; margin: 0 .3em 0 0; overflow: visible; background: #fff; }
+#p-cactions li.selected { border-color: #fabd23; padding: 0 0 .2em 0; font-weight: bold; }
+#p-cactions li a { background-color: #fbfbfb; color: #002bb8; border: none; padding: 0 .8em .3em .8em; text-decoration: none; text-transform: lowercase; position: relative; z-index: 0; margin: 0; }
+#p-cactions li.selected a { z-index: 3; background-color: #fff; }
+#p-cactions li.new a { color: #ba0000; }
+#p-search .pBody { text-align: center; }
+#searchInput { width: 10.9em; margin: 0; font-size: 95%; }
+.searchButton { background-color: #fbfbfb; border: 1px solid #2f6fab; font-size: 95%; margin: 0.15em 0 0 0; cursor: pointer; }
+#footer { background-color: #fff; border-top: 1px solid #fabd23; border-bottom: 1px solid #fabd23; margin: .6em 0 1em 0; padding: .4em 0 1.2em 0; text-align: center; font-size: 90%; }
+#footer li { display: inline; margin: 0 1.3em; }
+#f-poweredbyico { float: right; margin: 0 1em; color: #888; font-size: 85%; }
+#f-list { margin-left: 13.6em; }
+.feedlink { background: url(feed-icon.png) center left no-repeat; padding-left: 16px; }
+.mw-search-result { margin: .5em 0 1em 0; }
+.mw-search-result-heading { font-size: 108%; }
+.searchmatch { font-weight: bold; }
+.mw-history-list li { font-family: sans-serif; }
+.mw-history-list .minor { font-weight: bold; }
+.mw-history-list .comment { color: #555; font-style: italic; }
+.mw-history-list .history-size { color: #777; }
+.mw-plusminus-pos { color: #006400; }
+.mw-plusminus-neg { color: #8b0000; }
+.mw-plusminus-null { color: #aaa; }
+.mw-userlink { font-weight: normal; }
+div.archive-box { border: 1px solid #c9b48f; background: #fdf7e5; padding: .5em 1em; margin: 1em 0; }
+div.archive-box h4 { margin-top: 0; border-bottom: 1px dotted #c9b48f; }
+.readonly-notice { border: 1px solid #ccc; background: #fff; padding: 1em; margin: 1em 0; }
+textarea#wpTextbox1 { width: 100%; font-family: monospace; font-size: 95%; }
+#mw-content-text .diff-context { background: #eee; }

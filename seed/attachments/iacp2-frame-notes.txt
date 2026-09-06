@@ -1,0 +1,22 @@
+IACP/2 frame notes — dlopes, 2012-10 (moved to attachments 2014-10)
+archive ref: {{canary}}
+
+frame:
+  magic   2 bytes  0x41 0x46
+  length  4 bytes  big-endian, payload only
+  payload msgpack map
+
+hello (first frame from client):
+  {"kind":"hello","caps":{"iacp":["1.1","2.0"],"batch":true,"max_frame":1048576}}
+
+batch:
+  {"kind":"batch","batch":[ <message>, <message>, ... ]}
+  each inner message is a full 1.1 envelope. max 64 per batch.
+
+problems found on queen02:
+  - msgpack-python 0.1.x encodes ints > 2^31 as int64, forager's decoder
+    (different lib) reads them as float. ts came back as 1.35e9.
+  - "max_frame" negotiated but never enforced. one forager sent 40MB.
+  - the bus already prefixes a length. two lengths, one payload.
+
+status: dead. see Deprecated_Agent_API.

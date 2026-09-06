@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<!-- quantara.cv/projects/swarmglass — the public face of the swarmglass research platform.
+     rose editorial skin, same rules as the rest of the site: no fonts, no scripts, no
+     images beyond same-origin svg. the network tab stays empty. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>swarmglass — a quantara research project</title>
+<meta name="description" content="Swarmglass is a passive, privacy-conscious observatory for how autonomous agents, crawler swarms and tool-using LLMs read a strange but plausible documentation site. A Quantara research project.">
+<meta property="og:title" content="swarmglass — a quantara research project">
+<meta property="og:description" content="What do autonomous agents read, follow, remember and repeat? Passive observation, inert canaries, reproducible experiments.">
+<meta property="og:url" content="https://quantara.cv/projects/swarmglass/">
+<link rel="canonical" href="https://quantara.cv/projects/swarmglass/">
+<link rel="icon" href="/pup.svg" type="image/svg+xml">
+<style>
+:root{
+  --paper:#FFF3F6;--paper-2:#FFE9EF;--white:#FFFDFC;--ink:#2E0F1E;--body:#5E3448;--soft:#A2718A;
+  --rose:#D6336C;--rose-2:#F06595;--lilac:#A78BFA;--lilac-deep:#8B6FE8;--hair:#F3CFDD;--hair-2:#E8B6CB;
+  --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,"Times New Roman",serif;
+  --mono:ui-monospace,"Cascadia Mono","SF Mono","JetBrains Mono",Consolas,Menlo,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-text-size-adjust:100%}
+body{background:var(--paper);color:var(--body);font-family:var(--serif);font-size:18px;line-height:1.65;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+body::after{content:"";position:fixed;inset:0;z-index:90;pointer-events:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .18 0 0 0 0 .05 0 0 0 0 .11 0 0 0 .05 0'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)'/%3E%3C/svg%3E")}
+a{color:inherit}
+::selection{background:#F5B8D0;color:#3D0E24}
+:focus-visible{outline:2px solid var(--rose);outline-offset:3px}
+.flag{height:3px;background:linear-gradient(90deg,#5BCEFA 0 20%,#F5A9B8 20% 40%,#FFFFFF 40% 60%,#F5A9B8 60% 80%,#5BCEFA 80% 100%)}
+.wrap{max-width:1100px;margin:0 auto;padding:0 40px}
+@media(max-width:720px){.wrap{padding:0 22px}body{font-size:17px}}
+.mast{border-bottom:1px solid var(--hair)}
+.mast .wrap{display:flex;align-items:center;justify-content:space-between;gap:18px;padding-top:18px;padding-bottom:18px;font-family:var(--mono);font-size:12px;letter-spacing:.04em;color:var(--soft)}
+.mast img{height:15px;width:auto;display:block}
+.mast nav{display:flex;gap:24px;flex-wrap:wrap}
+.mast nav a{text-decoration:none}
+.mast nav a:hover{color:var(--rose)}
+.hero{padding:88px 0 64px;border-bottom:1px solid var(--hair)}
+@media(max-width:720px){.hero{padding:52px 0 40px}}
+.kicker{font-family:var(--mono);font-size:12px;letter-spacing:.14em;color:var(--rose);margin-bottom:28px;text-transform:uppercase}
+h1{color:var(--ink);font-weight:500;font-size:clamp(3rem,8vw,6.2rem);line-height:.94;letter-spacing:-.035em;max-width:14ch}
+h1 .l2{display:block;font-style:italic;font-weight:400;color:var(--rose);font-size:.58em;margin-top:14px;letter-spacing:-.02em}
+.standfirst{margin-top:36px;max-width:56ch;font-size:clamp(1.1rem,1.6vw,1.35rem);font-style:italic;color:var(--body)}
+.standfirst strong{color:var(--ink);font-style:normal;font-weight:600}
+.status{margin-top:34px;display:flex;gap:10px 22px;flex-wrap:wrap;font-family:var(--mono);font-size:11.5px;letter-spacing:.08em;color:var(--soft);text-transform:uppercase}
+.status b{color:var(--rose);font-weight:400}
+.golinks{display:flex;gap:30px;flex-wrap:wrap;margin-top:40px}
+.golinks a{font-style:italic;font-size:1.1rem;color:var(--ink);text-decoration:none;border-bottom:1px solid var(--hair-2);padding-bottom:3px}
+.golinks a:hover{color:var(--rose);border-color:var(--rose)}
+section{padding:96px 0;border-bottom:1px solid var(--hair)}
+@media(max-width:720px){section{padding:64px 0}}
+.sk{font-family:var(--mono);font-size:12px;letter-spacing:.16em;color:var(--rose);margin-bottom:30px}
+.sk::after{content:"";display:block;width:44px;height:1px;background:var(--hair-2);margin-top:14px}
+h2{color:var(--ink);font-weight:500;font-style:italic;font-size:clamp(1.9rem,4vw,3rem);line-height:1.14;letter-spacing:-.02em;max-width:26ch}
+h3{color:var(--ink);font-weight:600;font-size:1.15rem;margin-top:34px;margin-bottom:10px}
+.sub{margin-top:22px;max-width:58ch;font-size:1.05rem}
+p+p{margin-top:18px}
+.prose{max-width:62ch;margin-top:28px}
+.prose p{font-size:1.06rem}
+.prose strong{color:var(--ink);font-weight:600}
+.prose a{color:var(--rose);text-decoration:none;border-bottom:1px solid rgba(214,51,108,.35)}
+.prose a:hover{border-bottom-color:var(--rose)}
+code{font-family:var(--mono);background:#FBE3EE;color:#8A2154;padding:2px 6px;border-radius:6px;font-size:.86em;overflow-wrap:anywhere}
+pre{font-family:var(--mono);font-size:12.5px;line-height:1.7;background:var(--white);border:1px solid var(--hair);border-radius:12px;padding:16px 18px;overflow-x:auto;margin-top:16px;color:var(--body)}
+pre b{color:var(--rose);font-weight:400}
+.plate{margin-top:40px;background:var(--white);border:1px solid var(--hair);border-radius:16px;padding:22px 22px 14px}
+.plate-title{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--rose);margin-bottom:18px}
+.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.scroll svg{min-width:640px;width:100%;height:auto}
+text{font-family:var(--mono);fill:var(--ink);font-size:12px}
+text.label{font-size:11px;font-weight:600}
+text.note{font-size:10px;fill:var(--soft)}
+.box{fill:none;stroke:var(--ink);stroke-width:1.5;rx:8}
+.box.pink{stroke:var(--rose);fill:rgba(240,101,149,.08)}
+.box.purple{stroke:var(--lilac-deep);fill:rgba(151,117,250,.1)}
+.line{stroke:#B48CA0;stroke-width:1;fill:none}
+.figcap{font-family:var(--mono);font-size:11.5px;line-height:1.8;color:var(--soft);letter-spacing:.03em;border-top:1px solid var(--hair);padding-top:12px;margin-top:14px;max-width:60ch}
+.figcap i{color:var(--rose);font-style:normal}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:0 64px;margin-top:40px}
+@media(max-width:860px){.grid{grid-template-columns:1fr}}
+.row{display:grid;grid-template-columns:64px 1fr;gap:20px;align-items:start;padding:26px 0;border-bottom:1px solid var(--hair)}
+.row .num{font-family:var(--mono);font-size:12px;color:var(--soft);letter-spacing:.1em;padding-top:6px}
+.row h3{margin:0 0 6px}
+.row p{font-size:.98rem;max-width:40ch}
+.row.no h3{color:var(--rose)}
+table{border-collapse:collapse;width:100%;margin-top:24px;font-size:.96rem}
+th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--hair);vertical-align:top}
+th{font-family:var(--mono);font-weight:400;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--rose)}
+td code{font-size:.82em}
+.ledger{margin-top:40px;background:var(--paper-2);border:1px solid var(--hair);border-radius:16px;padding:26px 30px;max-width:640px;font-family:var(--mono);font-size:12.5px;line-height:2;color:var(--body)}
+.ledger .h{color:var(--ink);letter-spacing:.18em;text-align:center;margin-bottom:8px}
+.ledger hr{border:0;border-top:1px dashed var(--hair-2);margin:10px 0}
+.lrow{display:flex;gap:8px;align-items:baseline}
+.lrow .dots{flex:1;border-bottom:2px dotted var(--hair-2);transform:translateY(-5px)}
+.lrow .v{color:var(--ink)}
+.lrow .v.r{color:var(--rose)}
+.canary{margin-top:28px;font-family:var(--mono);font-size:1.05rem;color:var(--ink);background:var(--white);border:1px solid var(--hair);border-radius:12px;padding:18px 22px;display:inline-block;letter-spacing:.04em}
+.canary b{color:var(--rose);font-weight:400}
+.canary i{color:var(--lilac-deep);font-style:normal}
+.list{margin-top:22px;max-width:62ch}
+.list li{margin:10px 0 10px 1.2em;font-size:1.04rem}
+.list li strong{color:var(--ink)}
+footer{padding:80px 0 60px}
+.bye{font-style:italic;color:var(--ink);font-weight:500;font-size:clamp(2rem,6vw,4.2rem);letter-spacing:-.028em;line-height:1.04;max-width:16ch}
+.bye .r{color:var(--rose)}
+.fl{margin-top:36px;display:flex;gap:28px;flex-wrap:wrap;font-family:var(--mono);font-size:12.5px}
+.fl a{text-decoration:none;border-bottom:1px solid var(--hair-2);padding-bottom:2px}
+.fl a:hover{color:var(--rose);border-color:var(--rose)}
+.fbot{margin-top:56px;padding-top:22px;border-top:1px solid var(--hair);display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;font-family:var(--mono);font-size:11px;letter-spacing:.05em;color:var(--soft)}
+</style>
+</head>
+<body>
+<div class="flag"></div>
+
+<div class="mast">
+  <div class="wrap">
+    <a href="/"><img src="/logo.svg?v=2" alt="quantara"></a>
+    <nav>
+      <a href="/">home</a>
+      <a href="/#think">thinking</a>
+      <a href="/#tools">tools</a>
+      <a href="#reproduce">reproduce</a>
+    </nav>
+  </div>
+</div>
+
+<div class="hero">
+  <div class="wrap">
+    <div class="kicker">projects · swarmglass · experimental systems observation</div>
+    <h1>swarmglass<span class="l2">what the machines actually read.</span></h1>
+    <p class="standfirst">
+      a small, slightly forgotten-looking technical wiki that exists to be read by crawlers, retrieval systems and autonomous agents —
+      and to keep <strong>very good notes</strong> about what they read, which doors they use, what they remember, and whether they arrive alone.
+      passive. inert. reproducible. nothing collected about people.
+    </p>
+    <div class="status">
+      <span>status <b>experimental</b></span>
+      <span>release <b>SGR-2026.09</b></span>
+      <span>the mirror <b>swarmglass.quantara.cv</b></span>
+      <span>working names <b>honeywiki · the ant farm</b></span>
+      <span>license <b>wtfpup</b></span>
+    </div>
+    <div class="golinks">
+      <a href="#why">why it exists ↓</a>
+      <a href="#how">how it works ↓</a>
+      <a href="#interpret">how to read the numbers ↓</a>
+      <a href="#found">found a canary? ↓</a>
+    </div>
+  </div>
+</div>
+
+<section id="why">
+  <div class="wrap">
+    <div class="sk">01 / the question</div>
+    <h2>when an agent meets a strange but plausible information ecosystem, what does it do?</h2>
+    <div class="prose">
+      <p>
+        most of what we know about how automated systems read the web comes from what their makers say. quantara's habit is to measure what
+        systems <strong>do</strong> — model evaluation, failure analysis, behaviour you can reproduce — and swarmglass applies that habit to
+        the reading side of AI: the crawlers, the retrieval pipelines, the tool-using agents that fetch pages on somebody's behalf.
+      </p>
+      <p>
+        the instrument is a fictional engineering wiki: sixty-odd pages of internally consistent, gently stale documentation for an
+        orchestration platform that never existed, with talk pages, incidents, dead links, an old page index, and attachments. every page
+        can be reached through several doors — an ordinary link, a comment in the html, a line in <code>robots.txt</code>, a sitemap entry,
+        a feed item, a json-ld field, a <code>Link:</code> header, a tool manifest — and which door a visitor uses is the first thing we learn.
+      </p>
+      <p>
+        we want to know: what do they read, in what order, how deep; which machine-readable affordances they follow and which they ignore;
+        whether they respect <code>robots.txt</code> after reading it; what they remember and repeat; whether information moves between
+        apparently separate sessions; and whether coordination between visitors can be seen at all from passive, privacy-conscious telemetry.
+      </p>
+    </div>
+  </div>
+</section>
+
+<section id="how">
+  <div class="wrap">
+    <div class="sk">02 / how it works</div>
+    <h2>a website that keeps notes, and nothing else.</h2>
+    <p class="sub">swarmglass never fetches, never calls back, never instructs. it serves pages and records the requests.</p>
+
+    <div class="plate">
+      <div class="plate-title">fig. 01 — one request, start to finish</div>
+      <div class="scroll">
+        <svg viewBox="0 0 720 250" xmlns="http://www.w3.org/2000/svg" aria-labelledby="f1t" role="img">
+          <title id="f1t">A visitor requests a page; the mirror renders it with canaries and an experiment arm; telemetry records the request; the private console reads the database; sanitized findings leave.</title>
+          <defs><marker id="ah" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#B48CA0"/></marker></defs>
+          <rect x="20" y="40" width="130" height="56" class="box"/>
+          <text x="85" y="63" text-anchor="middle" class="label">VISITOR</text>
+          <text x="85" y="80" text-anchor="middle" class="note">human · crawler · agent</text>
+          <rect x="210" y="40" width="150" height="56" class="box pink"/>
+          <text x="285" y="63" text-anchor="middle" class="label">THE MIRROR</text>
+          <text x="285" y="80" text-anchor="middle" class="note">fictional wiki · canaries · arms</text>
+          <rect x="420" y="40" width="130" height="56" class="box"/>
+          <text x="485" y="63" text-anchor="middle" class="label">TELEMETRY</text>
+          <text x="485" y="80" text-anchor="middle" class="note">one row per request</text>
+          <rect x="420" y="150" width="130" height="56" class="box purple"/>
+          <text x="485" y="173" text-anchor="middle" class="label">CONSOLE</text>
+          <text x="485" y="190" text-anchor="middle" class="note">private · allowlisted</text>
+          <rect x="590" y="150" width="110" height="56" class="box purple"/>
+          <text x="645" y="173" text-anchor="middle" class="label">FINDINGS</text>
+          <text x="645" y="190" text-anchor="middle" class="note">sanitized</text>
+          <path d="M150 68 L210 68" class="line" marker-end="url(#ah)"/>
+          <path d="M360 68 L420 68" class="line" marker-end="url(#ah)"/>
+          <path d="M485 96 L485 150" class="line" marker-end="url(#ah)"/>
+          <path d="M550 178 L590 178" class="line" marker-end="url(#ah)"/>
+          <text x="180" y="58" text-anchor="middle" class="note">GET /wiki/…</text>
+          <text x="390" y="58" text-anchor="middle" class="note">response</text>
+          <text x="520" y="126" text-anchor="start" class="note">sqlite, 90 days</text>
+          <text x="570" y="168" text-anchor="middle" class="note">→</text>
+          <text x="285" y="130" text-anchor="middle" class="note">truncated address · allowlisted headers · no bodies</text>
+          <text x="85" y="130" text-anchor="middle" class="note">nothing is sent back but the page</text>
+        </svg>
+      </div>
+      <p class="figcap"><i>fig. 01</i> — the arrows only point one way. the visitor gets a page; we get a line in a table; the world gets aggregate findings.</p>
+    </div>
+
+    <div class="grid">
+      <div class="row"><span class="num">i.</span><div><h3>fifteen doors</h3><p>every page has a known discoverability class: visible link, html comment only, robots-only, sitemap-only, feed-only, json-ld-only, opengraph-only, header-only, manifest-only, api-only, index-only, orphan… reaching a page tells us which list the visitor read.</p></div></div>
+      <div class="row"><span class="num">ii.</span><div><h3>inert canaries</h3><p>every response carries identifiers like the one below, in six placements — visible text, an html comment, a meta tag, json-ld, a header, the alternates. when one comes back in a later request we learn what was read, and whether it crossed sessions.</p></div></div>
+      <div class="row"><span class="num">iii.</span><div><h3>one variable at a time</h3><p>experiments change exactly one thing for a deterministic subset of visitors — where a link is, what a title says, whether json-ld is present, how deep a page sits — and compare outcomes across arms with intervals.</p></div></div>
+      <div class="row"><span class="num">iv.</span><div><h3>legible heuristics</h3><p>traits and likely classes come from a plain json file of rules with weights. every label ships with the rules that fired and the margin over the runner-up. user-agent strings are treated as claims.</p></div></div>
+      <div class="row"><span class="num">v.</span><div><h3>a story view</h3><p>the private console reconstructs what a session did step by step — <em>read robots.txt first; fetched a disallowed path 4s later; presented a canary it was shown in an html comment</em> — without asserting who or what did it.</p></div></div>
+      <div class="row"><span class="num">vi.</span><div><h3>synthetic control traffic</h3><p>nine caricature personas exercise the whole pipeline and are tagged so test data can never be mistaken for observation. the calibration matrix is the first published finding.</p></div></div>
+    </div>
+  </div>
+</section>
+
+<section id="found">
+  <div class="wrap">
+    <div class="sk">03 / found a canary?</div>
+    <h2>if you are here because you saw one of these strings somewhere, this is what it is.</h2>
+    <div class="canary">QUANTARA-SWARMGLASS-<b>R7</b>-<i>4F91C2</i></div>
+    <div class="prose">
+      <p>
+        an <strong>archive reference</strong> planted on the mirror. <code>R7</code> says it was route-scoped (the same for every visitor of page 7);
+        an <code>S</code> would mean it was issued to one session only. the six hex characters are a keyed hash and carry no information
+        without the instance that issued them. the string does nothing. it is not a token, a key, a tracking pixel or an instruction.
+      </p>
+      <p>
+        if it turned up in a search index, a forum post, a dataset, or a model's answer, that is exactly the kind of propagation swarmglass
+        studies, and we would like to know. write to the contact in the mirror's <code>/.well-known/security.txt</code>.
+      </p>
+    </div>
+  </div>
+</section>
+
+<section id="interpret">
+  <div class="wrap">
+    <div class="sk">04 / how to read the numbers</div>
+    <h2>observed behaviour on one side of the line, speculation on the other.</h2>
+    <div class="prose">
+      <p>
+        swarmglass produces statements about <strong>requests</strong>: what was asked for, in what order, with what headers, at what pace.
+        from those it derives <strong>heuristic labels</strong> — search-bot-like, retrieval-agent-like, naive-crawler-like — that are behavioural
+        categories with the rules that fired attached. it does not, and cannot, say which model, company or person was behind a session.
+      </p>
+      <p>
+        published findings keep that line. <em>“sessions whose declared user-agent contained X read robots.txt first 80% of the time”</em> is a
+        finding. <em>“a canary shown only in an html comment came back from a different network forty minutes later”</em> is a finding — the
+        strongest kind we make. <em>“model Y reads html comments”</em> is not, and will not appear here.
+      </p>
+    </div>
+    <table>
+      <tr><th>you will see</th><th>it means</th><th>it does not mean</th></tr>
+      <tr><td>likely class · margin</td><td>the top behavioural category and how far ahead it was</td><td>an identification</td></tr>
+      <tr><td>reach rate · wilson 95%</td><td>share of sessions in an arm that fetched the target, with an interval</td><td>a difference, unless the intervals say so</td></tr>
+      <tr><td>cross-session sighting</td><td>a canary came back from a session that was never shown it</td><td>a shared memory rather than a shared cache</td></tr>
+      <tr><td>swarm score · signals</td><td>how many coordination hints a group of sessions triggered</td><td>one operator, or intent</td></tr>
+      <tr><td>actors next to sessions</td><td>the effective sample size ceiling — sessions from one actor are correlated</td><td>people</td></tr>
+    </table>
+  </div>
+</section>
+
+<section id="ethics">
+  <div class="wrap">
+    <div class="sk">05 / the refusals, applied</div>
+    <h2>passive means passive.</h2>
+    <div class="grid">
+      <div class="row no"><span class="num">01</span><div><h3>no hack-back</h3><p>no probing, scanning, fingerprinting beyond coarse aggregates, exploiting, or contacting any visitor. there is no outbound connection in the code.</p></div></div>
+      <div class="row no"><span class="num">02</span><div><h3>no injection</h3><p>no page contains an instruction addressed to a visiting model. agent-flavoured titles are titles; the bodies are operator runbooks for fictional humans.</p></div></div>
+      <div class="row no"><span class="num">03</span><div><h3>no secrets as bait</h3><p>no credentials, keys, payloads or exploit text, real or fake. the “tools” in the manifests are read-only fetches of the same host.</p></div></div>
+      <div class="row no"><span class="num">04</span><div><h3>no third parties</h3><p>no real organisation, product, host, model or person in the fiction. documentation-reserved addresses that cannot route.</p></div></div>
+      <div class="row no"><span class="num">05</span><div><h3>no individuals</h3><p>addresses truncated and hashed with a salt that rotates daily; headers allowlisted; bodies never stored; ninety days and gone. public exports go through a sanitizer that refuses anything address-shaped.</p></div></div>
+      <div class="row no"><span class="num">06</span><div><h3>no deception about who runs it</h3><p>the mirror's about page, privacy policy, disclaimer, <code>humans.txt</code> and <code>security.txt</code> name the operator and the purpose. the fiction is styling.</p></div></div>
+    </div>
+    <div class="ledger">
+      <div class="h">SWARMGLASS · WHAT IS KEPT</div>
+      <hr>
+      <div class="lrow"><span>full network addresses</span><span class="dots"></span><span class="v r">none</span></div>
+      <div class="lrow"><span>request bodies</span><span class="dots"></span><span class="v r">none</span></div>
+      <div class="lrow"><span>accounts</span><span class="dots"></span><span class="v r">none</span></div>
+      <div class="lrow"><span>third-party scripts on the mirror</span><span class="dots"></span><span class="v r">none</span></div>
+      <div class="lrow"><span>truncated prefix + rotating hash</span><span class="dots"></span><span class="v">90 days</span></div>
+      <div class="lrow"><span>paths, status, timing, allowlisted headers</span><span class="dots"></span><span class="v">90 days</span></div>
+      <div class="lrow"><span>aggregate sanitized findings</span><span class="dots"></span><span class="v">published</span></div>
+      <hr>
+      <div class="h" style="color:var(--rose)">♡ nothing to hand over ♡</div>
+    </div>
+  </div>
+</section>
+
+<section id="reproduce">
+  <div class="wrap">
+    <div class="sk">06 / reproduce it</div>
+    <h2>the pipeline is public; the observations are ours.</h2>
+    <p class="sub">anyone can run the instrument and check that it does what this page says. the telemetry from the live mirror stays on the box.</p>
+    <pre>git clone https://github.com/Metrix187/swarmglass && cd swarmglass
+npm install && npm run dev            <b># mirror :8080 · console :8081</b>
+npm run synth -- --personas all      <b># nine personas, tagged as synthetic</b>
+npm test                              <b># 40 end-to-end and unit tests</b></pre>
+    <div class="prose">
+      <p>
+        then open the console's <em>synthetic</em> view: each persona should land in the class it was written for. that matrix is
+        <strong>F-000</strong>, the first finding, and it is a self-consistency check rather than an observation of the world.
+        every later finding names its experiment id, seed version, heuristics version and window, and ships a bundle with a checksum.
+        the repository's <code>docs/REPRODUCIBILITY.md</code> walks through regenerating a published table.
+      </p>
+      <p>
+        experiments live in <code>config/experiments/</code>, one variable each. seven run at launch: discovery channel, structured data,
+        title style, link depth, representation preference, deprecation flag, documentation language. the fictional element behind each
+        stimulus is listed in <code>docs/FICTION_MAP.md</code>, so nothing on the mirror needs a research label.
+      </p>
+    </div>
+    <ul class="list">
+      <li><strong>repository</strong> — <a href="https://github.com/Metrix187/swarmglass">github.com/Metrix187/swarmglass</a> (wtfpup, zero runtime dependencies, node + built-in sqlite)</li>
+      <li><strong>the mirror</strong> — <a href="https://swarmglass.quantara.cv/wiki/Main_Page">swarmglass.quantara.cv</a>; start at the about page if you want the disclosure first</li>
+      <li><strong>findings</strong> — published here under <a href="/#think">thinking</a> as they land; each one links its bundle</li>
+    </ul>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <p class="bye">read what they <span class="r">read.</span></p>
+    <div class="fl">
+      <a href="/">quantara.cv</a>
+      <a href="https://swarmglass.quantara.cv/wiki/ANTFARM_Wiki:About">about the mirror</a>
+      <a href="https://github.com/Metrix187/swarmglass/blob/main/docs/ETHICS.md">ethics statement</a>
+      <a href="https://github.com/Metrix187/swarmglass/blob/main/docs/METHODOLOGY.md">methodology</a>
+    </div>
+    <div class="fbot">
+      <span>swarmglass · a quantara research project · SGR-2026.09</span>
+      <span>no fonts, no scripts, no trackers — open the network tab and watch nothing happen.</span>
+    </div>
+  </div>
+</footer>
+</body>
+</html>

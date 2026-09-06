@@ -1,0 +1,22 @@
+{
+  "id": "SGX-000",
+  "name": "baseline",
+  "version": 1,
+  "status": "archived",
+  "hypothesis": "No manipulation. Documents the default arm of every variable so later experiments can be read against it.",
+  "variable": "metadata_density",
+  "scope": "global",
+  "targets": [],
+  "arms": [
+    { "id": "A", "label": "defaults", "weight": 1, "value": "dense", "note": "every variable at its default (see src/experiments/registry.ts DEFAULTS)" }
+  ],
+  "assignment": { "unit": "actor", "salt": "SGX-000-baseline" },
+  "outcomes": [
+    { "id": "sessions", "metric": "sessions", "description": "sessions observed" },
+    { "id": "classes", "metric": "class_mix", "description": "likely-class distribution" }
+  ],
+  "seed_version": "2026.09.0",
+  "created": "2026-09-05",
+  "owner": "sky",
+  "notes": "Archived on purpose: it is a reference point, not something to run. Activate it only when every other experiment is paused."
+}

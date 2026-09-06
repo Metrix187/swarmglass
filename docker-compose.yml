@@ -1,0 +1,43 @@
+# swarmglass, isolated. the container can reach nothing on the host and nothing
+# on the host can reach it except the reverse proxy on loopback.
+services:
+  swarmglass:
+    build: .
+    image: quantara/swarmglass:0.1.0
+    container_name: swarmglass
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      SWARMGLASS_ENV: production
+      SWARMGLASS_DATA_DIR: /data
+      SWARMGLASS_PUBLIC_HOST: 0.0.0.0
+      SWARMGLASS_CONSOLE_HOST: 0.0.0.0
+    ports:
+      # loopback only: caddy/nginx on the host terminates tls and forwards here
+      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:8081:8081"
+    volumes:
+      - ./data:/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 256
+    mem_limit: 512m
+    cpus: 1.0
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+    networks:
+      - swarmglass
+
+networks:
+  swarmglass:
+    driver: bridge
+    # the honeypot never initiates outbound connections. if your docker supports it, add:
+    # internal: true   (then the proxy must join this network instead of using loopback ports)

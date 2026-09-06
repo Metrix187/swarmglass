@@ -1,0 +1,26 @@
+{
+  "id": "SGX-0NN",
+  "name": "short-kebab-name",
+  "version": 1,
+  "status": "draft",
+  "hypothesis": "One sentence. What you expect to differ between arms, and why.",
+  "variable": "one of: link_visibility | structured_data | title_style | canary_mode | link_depth | manifest_visibility | representation | deprecation_flag | metadata_density | doc_language",
+  "scope": "targets (one page) or global (canary_mode, manifest_visibility, metadata_density only)",
+  "targets": ["Page_Id"],
+  "params": { "host_page": "only for link_visibility: where the visible/obscure link is injected", "anchor_text": "link text" },
+  "arms": [
+    { "id": "A", "label": "control", "weight": 1, "value": "<default value>" },
+    { "id": "B", "label": "treatment", "weight": 1, "value": "<other allowed value>" }
+  ],
+  "assignment": { "unit": "actor", "salt": "SGX-0NN-<name>-<yyyy-mm>" },
+  "outcomes": [
+    { "id": "reached", "metric": "page_reached", "page": "Page_Id" },
+    { "id": "time_to_reach", "metric": "seconds_to_page", "page": "Page_Id" },
+    { "id": "classes", "metric": "class_mix" }
+  ],
+  "seed_version": "2026.09.0",
+  "created": "YYYY-MM-DD",
+  "owner": "who",
+  "notes": "Files starting with _ are ignored by the registry. Copy this, rename it, remove this line.",
+  "fiction_map": { "public fictional element": "what it is for" }
+}

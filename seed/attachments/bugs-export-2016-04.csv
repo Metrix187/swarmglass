@@ -1,0 +1,17 @@
+id,component,status,opened,closed,title
+AF-31,forager,open,2010-09-14,,foragers stamp ts with own clock
+AF-44,queen,open,2011-02-08,,reissue does not cancel original assignment
+AF-52,toolreg,closed,2012-06-01,2015-08-10,v1 manifest has no cost class
+AF-58,toolreg,open,2013-01-22,,manifest cache has no ttl
+AF-61,cmsync,open,2013-03-30,,cache ttl is wall clock
+AF-67,cmsync,closed,2015-02-22,2015-08-10,tie-break on queen name
+AF-70,phero,open,2015-02-09,,replay log unbounded per trail
+AF-71,phero,open,2012-03-02,,no authentication on bus
+AF-75,forager,wontfix,2015-09-01,2016-01-14,basalt-1 silent fallback to basalt-2
+AF-80,queen,open,2013-06-17,,past-deadline nodes still assigned
+AF-83,queen,open,2014-11-01,,antc cycle regression loops scheduler
+AF-88,notify.mail,closed,2015-04-14,2015-04-14,mail loop
+AF-90,wiki,open,2014-06-30,,upgrade lost operations portal subpages
+AF-91,forager,open,2015-12-18,,model probe should compare against golden output
+AF-92,queen,open,2013-10-21,,election back-off is not random
+# archive ref: {{canary}}

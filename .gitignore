@@ -1,0 +1,14 @@
+node_modules/
+data/
+!data/.gitkeep
+reports/
+exports/
+*.db
+*.db-wal
+*.db-shm
+*.log
+.env
+.env.local
+.DS_Store
+Thumbs.db
+dist/

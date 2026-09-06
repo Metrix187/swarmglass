@@ -1,0 +1,45 @@
+# traefik dynamic config for option A. assumes an entrypoint "websecure" with a certresolver "le".
+http:
+  routers:
+    swarmglass-public:
+      rule: "Host(`swarmglass.quantara.cv`)"
+      entryPoints: [websecure]
+      service: swarmglass-public
+      middlewares: [swarmglass-hsts, swarmglass-block-console]
+      tls: { certResolver: le }
+    swarmglass-console:
+      rule: "Host(`research.swarmglass.quantara.cv`)"
+      entryPoints: [websecure]
+      service: swarmglass-console
+      middlewares: [swarmglass-hsts, swarmglass-noindex, swarmglass-allowlist, swarmglass-basicauth]
+      tls: { certResolver: le }
+
+  services:
+    swarmglass-public:
+      loadBalancer:
+        servers: [{ url: "http://127.0.0.1:8080" }]
+        passHostHeader: true
+    swarmglass-console:
+      loadBalancer:
+        servers: [{ url: "http://127.0.0.1:8081" }]
+        passHostHeader: true
+
+  middlewares:
+    swarmglass-hsts:
+      headers:
+        stsSeconds: 31536000
+    swarmglass-noindex:
+      headers:
+        customResponseHeaders:
+          X-Robots-Tag: "noindex, nofollow"
+    swarmglass-block-console:
+      # console paths never resolve on the public host
+      replacePathRegex:
+        regex: "^/(__quantara/|login|logout|ui/).*"
+        replacement: "/__blocked__"
+    swarmglass-allowlist:
+      ipAllowList:
+        sourceRange: ["100.64.0.0/10", "10.0.0.0/8"]   # TODO: your ranges
+    swarmglass-basicauth:
+      basicAuth:
+        users: ["researcher:$apr1$TODO$REPLACE_WITH_HTPASSWD_OUTPUT"]

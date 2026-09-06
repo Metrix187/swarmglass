@@ -1,0 +1,37 @@
+{
+  "name": "@quantara/swarmglass",
+  "version": "0.1.0",
+  "description": "Swarmglass — a passive observation platform for studying how autonomous agents and crawler swarms read, remember, and propagate information. A Quantara research project.",
+  "private": true,
+  "type": "module",
+  "license": "LicenseRef-WTFPUP-1.0",
+  "homepage": "https://quantara.cv/projects/swarmglass/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Metrix187/swarmglass"
+  },
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning src/main.ts",
+    "dev": "SWARMGLASS_ENV=development node --disable-warning=ExperimentalWarning --watch src/main.ts",
+    "check": "tsc --noEmit -p tsconfig.json",
+    "test": "node --disable-warning=ExperimentalWarning --test \"tests/*.test.ts\"",
+    "migrate": "node --disable-warning=ExperimentalWarning tools/migrate.ts",
+    "seed:check": "node --disable-warning=ExperimentalWarning tools/seed-check.ts",
+    "synth": "node --disable-warning=ExperimentalWarning tools/synth.ts",
+    "report": "node --disable-warning=ExperimentalWarning tools/report.ts",
+    "export": "node --disable-warning=ExperimentalWarning tools/export.ts",
+    "purge": "node --disable-warning=ExperimentalWarning tools/purge.ts",
+    "rescore": "node --disable-warning=ExperimentalWarning tools/rescore.ts",
+    "canary": "node --disable-warning=ExperimentalWarning tools/canary.ts",
+    "hash-password": "node --disable-warning=ExperimentalWarning tools/hash-password.ts",
+    "bundle": "node --disable-warning=ExperimentalWarning tools/bundle.ts",
+    "article": "node --disable-warning=ExperimentalWarning tools/article.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "typescript": "^5.9.2"
+  }
+}

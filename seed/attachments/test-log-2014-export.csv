@@ -1,0 +1,20 @@
+date,model,runtime,result,commit,by,note
+2014-06-09,Basalt-2,3.0.0-dev,pass,c3d7b2,jbrandt,
+2014-06-11,Basalt-2,3.0.0-dev,pass,c3d7c0,jbrandt,
+2014-06-16,Larkspur-S,3.0.0-dev,pass,c3d7c0,jbrandt,
+2014-06-23,Basalt-2,3.0.0-dev,fail,d0d0d0,jbrandt,loader crash on startup
+2014-06-24,Basalt-2,3.0.0-dev,pass,d0d0d1,jbrandt,fixed
+2014-07-01,Basalt-1,3.0.0-dev,pass,d0d0d1,jbrandt,legacy loader
+2014-07-08,Basalt-2,3.0.0-dev,pass,d9d9d9,jbrandt,split=2
+2014-07-22,Basalt-2,3.0.0-dev,pass,e1e1e4,jbrandt,split=2 forager-07/12
+2014-07-29,Basalt-2,3.0.0-dev,fail,e1e1e4,jbrandt,split=4 shard 3 oom (again)
+2014-08-05,Basalt-2,3.0.0-dev,pass,e2e2e2,jbrandt,
+2014-08-12,Larkspur-S,3.0.0-dev,pass,e2e2e2,jbrandt,
+2014-08-19,Basalt-2,3.0.0-rc1,pass,f0f0f0,jbrandt,
+2014-08-26,Basalt-1,3.0.0-rc1,pass,f0f0f0,jbrandt,legacy loader
+2014-09-02,Basalt-2,3.0.0-rc1,pass,f0f0f2,jbrandt,
+2014-09-09,Basalt-2,3.0.0-rc2,pass,0f0f0e,jbrandt,
+2014-09-16,Larkspur-S,3.0.0-rc2,pass,0f0f0e,jbrandt,
+2014-09-23,Basalt-2,3.0.0-rc2,pass,0f0f0f,jbrandt,
+2014-09-29,Basalt-2,3.0.0-rc2,pass,0f0f0f,jbrandt,last day of internship
+# archive ref: {{canary}}

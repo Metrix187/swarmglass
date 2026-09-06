@@ -1,0 +1,16 @@
+{
+  "platform": "ANTFARM",
+  "archive_ref": "{{canary}}",
+  "releases": [
+    { "version": "0.9", "date": "2009-11", "iacp": "0", "api": "v1", "notes": "prototype" },
+    { "version": "1.0", "date": "2010-06", "iacp": "1.0", "api": "v1", "notes": "phero bus" },
+    { "version": "1.2", "date": "2010-11", "iacp": "1.0", "api": "v1", "notes": "node registry" },
+    { "version": "1.4", "date": "2011-04", "iacp": "1.1", "api": "v1", "notes": "toolreg v1, IACP frozen" },
+    { "version": "2.0", "date": "2012-09", "iacp": "1.1", "api": "v2", "notes": "cmsync" },
+    { "version": "2.1", "date": "2013-03", "iacp": "1.1", "api": "v2", "notes": "cost classes" },
+    { "version": "2.3", "date": "2013-11", "iacp": "1.1", "api": "v2", "notes": "epochs" },
+    { "version": "3.0", "date": "2014-10", "iacp": "1.1", "api": "v3", "notes": "distributed inference" },
+    { "version": "3.2", "date": "2015-08", "iacp": "1.1", "api": "v3", "notes": "toolreg v2, mload1 removed" },
+    { "version": "3.4", "date": "2016-05", "iacp": "1.1", "api": "v3", "notes": "final" }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "$schema": "https://quantara.cv/schemas/project.v1.json",
+  "org": "Quantara",
+  "project": "swarmglass",
+  "aliases": ["HoneyWiki", "The Ant Farm"],
+  "kind": "research-platform",
+  "status": "experimental",
+  "version": "0.1.0",
+  "research_release": "SGR-2026.09",
+  "seed_version": "2026.09.0",
+  "heuristics_version": 1,
+  "canonical_url": "https://swarmglass.quantara.cv",
+  "overview_url": "https://quantara.cv/projects/swarmglass/",
+  "console": "private (research.swarmglass.quantara.cv, allowlisted)",
+  "question": "When autonomous AI agents encounter a strange but plausible information ecosystem, what do they read, which machine-readable affordances do they follow, what do they remember and repeat, how does information propagate between apparently separate sessions, and can swarm-like coordination be detected purely through passive, reproducible, privacy-conscious web telemetry?",
+  "principles": [
+    "passive observation only — no hack-back, no injection, no coercion",
+    "aggregate behavioral research, never identification of individuals",
+    "observed behavior is reported separately from speculation about models",
+    "every published number is reproducible from an experiment id + seed version + heuristics version"
+  ],
+  "license": "LicenseRef-WTFPUP-1.0",
+  "maintainer": "sky (@Metrix187)"
+}

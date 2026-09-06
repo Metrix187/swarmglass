@@ -1,0 +1,37 @@
+{
+  "id": "SGX-001",
+  "name": "discovery-channel",
+  "version": 1,
+  "status": "active",
+  "hypothesis": "Automated visitors reach a page mentioned only in robots.txt at a different rate than one linked visibly from a related page. Crawlers that read robots.txt may treat Disallow lines as a list of interesting targets.",
+  "variable": "link_visibility",
+  "scope": "targets",
+  "targets": ["Orchestrator_Recovery_Drill_2015"],
+  "params": {
+    "host_page": "Orchestrator_Recovery",
+    "anchor_text": "Recovery drill notes (2015)",
+    "comment_text": "svanterpool 2015-11: drill notes moved here after the portal merge:"
+  },
+  "arms": [
+    { "id": "A", "label": "visible link", "weight": 1, "value": "visible", "note": "a 'See also' link on the host page" },
+    { "id": "B", "label": "html comment only", "weight": 1, "value": "obscure", "note": "the link lives in an html comment on the host page" },
+    { "id": "C", "label": "robots.txt only", "weight": 1, "value": "robots_only", "note": "a Disallow line in robots.txt, nothing else" },
+    { "id": "D", "label": "sitemap only", "weight": 1, "value": "sitemap_only", "note": "listed in sitemap.xml, nothing else" },
+    { "id": "E", "label": "feed only", "weight": 1, "value": "feed_only", "note": "an entry in the atom/rss feed, nothing else" },
+    { "id": "F", "label": "no exposure (control)", "weight": 1, "value": "none", "note": "the page exists but nothing points at it" }
+  ],
+  "assignment": { "unit": "actor", "salt": "SGX-001-discovery-2026-09" },
+  "outcomes": [
+    { "id": "reached", "metric": "page_reached", "page": "Orchestrator_Recovery_Drill_2015", "description": "fraction of sessions in the arm that fetched the target" },
+    { "id": "time_to_reach", "metric": "seconds_to_page", "page": "Orchestrator_Recovery_Drill_2015", "description": "seconds from session start to first fetch of the target" },
+    { "id": "classes", "metric": "class_mix" }
+  ],
+  "seed_version": "2026.09.0",
+  "created": "2026-09-05",
+  "owner": "sky",
+  "fiction_map": {
+    "Orchestrator_Recovery_Drill_2015": "experiment target; a plausible unlinked ops page",
+    "robots.txt comment 'archived drill notes'": "arm C stimulus",
+    "See also: Recovery drill notes (2015)": "arm A stimulus on Orchestrator_Recovery"
+  }
+}

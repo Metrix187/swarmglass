@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Swarmglass research console</title>
+<link rel="stylesheet" href="/ui/style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand"><span class="wordmark">swarmglass</span><span class="sub">research console</span><span class="pill" id="envpill">…</span></div>
+  <nav id="nav">
+    <a href="#/overview">overview</a>
+    <a href="#/live">live</a>
+    <a href="#/sessions">sessions</a>
+    <a href="#/clusters">cohorts</a>
+    <a href="#/pages">pages</a>
+    <a href="#/canaries">canaries</a>
+    <a href="#/experiments">experiments</a>
+    <a href="#/motifs">motifs</a>
+    <a href="#/anomalies">anomalies</a>
+    <a href="#/synthetic">synthetic</a>
+    <a href="#/settings">settings</a>
+  </nav>
+  <div class="controls">
+    <label>range <select id="range"><option value="1h">1h</option><option value="6h">6h</option><option value="24h" selected>24h</option><option value="7d">7d</option><option value="30d">30d</option><option value="90d">90d</option></select></label>
+    <label>traffic <select id="synthetic"><option value="real" selected>real only</option><option value="synthetic">synthetic only</option><option value="all">all (never publish)</option></select></label>
+    <form method="post" action="/logout" id="logoutform"><input type="hidden" name="csrf" id="logoutcsrf"><button type="submit" class="ghost">sign out</button></form>
+  </div>
+</header>
+<div id="synthwarn" class="synthwarn" hidden>synthetic traffic is included in every view — for pipeline validation only, not observation</div>
+<main id="view"><p class="muted">loading…</p></main>
+<footer class="foot">Quantara · Swarmglass · heuristics are research labels with stated evidence, never identity claims · <a href="https://quantara.cv/projects/swarmglass/" rel="noopener">project page</a></footer>
+<script src="/ui/app.js"></script>
+</body>
+</html>

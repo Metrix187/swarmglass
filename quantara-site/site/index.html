@@ -1,0 +1,804 @@
+<!DOCTYPE html>
+<!-- view-source friendly. no fonts, no scripts, no trackers —
+     the network tab is the proof. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>quantara — nothing collected. nothing to hand over.</title>
+<meta name="description" content="Quantara builds local-first AI tools that run on your machine and collect nothing. No cloud, no accounts, no dataset.">
+<meta property="og:title" content="quantara — nothing collected. nothing to hand over.">
+<meta property="og:description" content="Local-first AI tools that run on your machine and collect nothing.">
+<link rel="icon" href="/pup.svg" type="image/svg+xml">
+<style>
+/* one committed canvas: blush paper, plum ink, print rules.
+   no dark mode on purpose — paper doesn't have one. */
+:root{
+  --paper:#FFF3F6;
+  --paper-2:#FFE9EF;
+  --white:#FFFDFC;
+  --ink:#2E0F1E;
+  --body:#5E3448;
+  --soft:#A2718A;
+  --rose:#D6336C;
+  --rose-2:#F06595;
+  --lilac:#A78BFA;
+  --hair:#F3CFDD;
+  --hair-2:#E8B6CB;
+  --max:1200px;
+  --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,"Times New Roman",serif;
+  --mono:ui-monospace,"Cascadia Mono","SF Mono","JetBrains Mono",Consolas,Menlo,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{
+  background:var(--paper);
+  color:var(--body);
+  font-family:var(--serif);
+  font-size:18px;
+  line-height:1.65;
+  overflow-x:hidden;
+  -webkit-font-smoothing:antialiased;
+  text-rendering:optimizeLegibility;
+}
+/* film grain so the gradients read analog, not app-store */
+body::after{
+  content:"";position:fixed;inset:0;z-index:90;pointer-events:none;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .18 0 0 0 0 .05 0 0 0 0 .11 0 0 0 .05 0'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+a{color:inherit}
+::selection{background:#F5B8D0;color:#3D0E24}
+:focus-visible{outline:2px solid var(--rose);outline-offset:3px}
+.wrap{max-width:var(--max);margin:0 auto;padding:0 40px}
+@media(max-width:720px){.wrap{padding:0 22px}body{font-size:17px}}
+
+.flag{height:3px;background:linear-gradient(90deg,#5BCEFA 0 20%,#F5A9B8 20% 40%,#FFFFFF 40% 60%,#F5A9B8 60% 80%,#5BCEFA 80% 100%)}
+
+/* ---------- masthead: a magazine folio line, not an app navbar ---------- */
+.mast{border-bottom:1px solid var(--hair)}
+.mast .wrap{
+  display:flex;align-items:center;justify-content:space-between;gap:18px;
+  padding-top:18px;padding-bottom:18px;
+  font-family:var(--mono);font-size:12px;letter-spacing:.04em;color:var(--soft);
+}
+.name{display:block}
+.name img{height:15px;width:auto;display:block}
+.mast nav{display:flex;gap:24px;flex-wrap:wrap}
+.mast nav a{text-decoration:none;transition:color .15s}
+.mast nav a:hover{color:var(--rose)}
+@media(max-width:560px){.mast nav{gap:16px}.mast .ed{display:none}}
+
+/* ---------- hero ---------- */
+.hero{position:relative;overflow:hidden;border-bottom:1px solid var(--hair)}
+.hero .wrap{
+  position:relative;
+  display:grid;grid-template-columns:minmax(0,1.05fr) minmax(300px,.95fr);
+  gap:24px;align-items:center;
+  padding-top:96px;padding-bottom:96px;
+}
+@media(max-width:900px){
+  .hero .wrap{grid-template-columns:1fr;padding-top:72px;padding-bottom:64px}
+}
+.kicker{
+  font-family:var(--mono);font-size:12px;letter-spacing:.14em;color:var(--rose);
+  margin-bottom:40px;
+}
+h1{
+  color:var(--ink);font-weight:500;
+  font-size:clamp(4.6rem,15vw,12rem);
+  line-height:.86;letter-spacing:-.04em;
+}
+h1 .l2{
+  display:block;font-style:italic;font-weight:400;color:var(--rose);
+  font-size:clamp(2.9rem,9.4vw,7.4rem);
+  margin:14px 0 0 .35em;letter-spacing:-.02em;
+}
+.swash{display:block;width:min(420px,58%);height:16px;margin:10px 0 0 .45em}
+.swash path{stroke:var(--rose-2);stroke-width:5;fill:none;stroke-linecap:round;opacity:.75}
+.hand{
+  margin:44px 0 0 .2em;max-width:34ch;
+  font-size:clamp(1.05rem,1.5vw,1.25rem);color:var(--body);
+}
+.hand strong{color:var(--ink);font-weight:600}
+.fn{
+  margin:26px 0 0 .2em;
+  font-family:var(--mono);font-size:12px;color:var(--soft);letter-spacing:.03em;
+}
+.fn b{color:var(--rose);font-weight:400}
+.golinks{display:flex;gap:34px;flex-wrap:wrap;margin:46px 0 0 .2em}
+.golinks a{
+  font-style:italic;font-size:1.15rem;color:var(--ink);text-decoration:none;
+  border-bottom:1px solid var(--hair-2);padding-bottom:3px;
+  transition:color .15s,border-color .15s;
+}
+.golinks a:hover{color:var(--rose);border-color:var(--rose)}
+
+figure.plate{margin:0;justify-self:end;width:100%;max-width:560px}
+@media(max-width:900px){figure.plate{max-width:440px;justify-self:center;margin-top:26px}}
+.orbit{width:118%;margin:-6% -12% -8% -6%;display:block}
+@media(max-width:900px){.orbit{width:100%;margin:0}}
+.figcap{
+  font-family:var(--mono);font-size:11.5px;line-height:1.8;color:var(--soft);
+  letter-spacing:.03em;max-width:36ch;
+  border-top:1px solid var(--hair);padding-top:12px;margin-top:2px;
+}
+.figcap i{color:var(--rose);font-style:normal}
+@media (prefers-reduced-motion:no-preference){
+  .rings{animation:spin 160s linear infinite;transform-origin:center;transform-box:fill-box}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .pup{animation:bob 7s ease-in-out infinite}
+  @keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+}
+
+/* ---------- marquee ---------- */
+.strip{border-bottom:1px solid var(--hair);overflow:hidden;background:var(--white)}
+.strip-in{
+  display:flex;width:max-content;
+  font-family:var(--mono);font-size:12px;letter-spacing:.18em;color:var(--soft);
+  padding:13px 0;white-space:nowrap;
+}
+.strip-in span{padding-right:2ch}
+.strip-in .s{color:var(--rose)}
+@media (prefers-reduced-motion:no-preference){
+  .strip-in{animation:slide 34s linear infinite}
+  @keyframes slide{to{transform:translateX(-50%)}}
+}
+
+/* ---------- shared section furniture ---------- */
+section{padding:130px 0;border-bottom:1px solid var(--hair)}
+@media(max-width:720px){section{padding:88px 0}}
+.sk{
+  font-family:var(--mono);font-size:12px;letter-spacing:.16em;color:var(--rose);
+  margin-bottom:34px;
+}
+.sk::after{content:"";display:block;width:44px;height:1px;background:var(--hair-2);margin-top:14px}
+h2{
+  color:var(--ink);font-weight:500;font-style:italic;
+  font-size:clamp(2rem,4.6vw,3.4rem);
+  line-height:1.12;letter-spacing:-.02em;max-width:24ch;
+}
+.sub{margin-top:24px;max-width:52ch;color:var(--body);font-size:1.05rem}
+.sub em{color:var(--ink)}
+
+/* ---------- tools index ---------- */
+.tools{margin-top:64px;border-top:1px solid var(--hair)}
+.trow{
+  display:grid;grid-template-columns:64px 1.05fr 1.5fr auto;gap:26px;
+  align-items:baseline;padding:30px 0;border-bottom:1px solid var(--hair);
+  text-decoration:none;transition:padding-left .18s;
+}
+a.trow:hover{padding-left:12px}
+a.trow:hover .tname{color:var(--rose)}
+@media(max-width:860px){
+  .trow{grid-template-columns:44px 1fr;gap:8px 18px}
+  .trow .tdesc{grid-column:2}
+  .trow .tmeta{grid-column:2}
+}
+.tno{font-family:var(--mono);font-size:12px;color:var(--soft);letter-spacing:.1em}
+.tname{color:var(--ink);font-size:clamp(1.35rem,2.4vw,1.8rem);font-weight:500;letter-spacing:-.015em;transition:color .15s}
+.tname sup{font-size:.5em;color:var(--rose)}
+.tdesc{font-style:italic;color:var(--body);font-size:1.02rem;max-width:44ch}
+.tmeta{font-family:var(--mono);font-size:11px;letter-spacing:.12em;color:var(--soft);justify-self:end}
+@media(max-width:860px){.tmeta{justify-self:start}}
+.tfoot{
+  margin-top:30px;display:flex;justify-content:space-between;gap:24px;flex-wrap:wrap;
+  font-family:var(--mono);font-size:12px;line-height:1.9;color:var(--soft);
+}
+.tfoot .dag{max-width:52ch}
+.tfoot .dag b{color:var(--rose);font-weight:400}
+.tfoot a{color:var(--ink);text-decoration:none;border-bottom:1px solid var(--hair-2)}
+.tfoot a:hover{color:var(--rose);border-color:var(--rose)}
+.curio{margin-top:56px;padding-top:26px;border-top:1px solid var(--hair)}
+.curio b{display:block;font-family:var(--mono);font-weight:400;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--rose);margin-bottom:14px}
+.curio p{font-family:var(--mono);font-size:12.5px;line-height:2.2;color:var(--soft)}
+.curio a{color:var(--ink);text-decoration:none;border-bottom:1px solid var(--hair-2)}
+.curio a:hover{color:var(--rose);border-color:var(--rose)}
+.curio em{font-family:var(--serif);color:var(--body)}
+
+/* the newest one, given room. not a trow — the index grid wants one-liners
+   and this needs a real sentence. was a promissory note until it shipped. */
+.latest{margin-top:52px;padding-top:28px;border-top:1px dashed var(--hair-2)}
+.latest b{display:block;font-family:var(--mono);font-weight:400;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--rose);margin-bottom:18px}
+.uhead{display:flex;align-items:baseline;justify-content:space-between;gap:10px 24px;flex-wrap:wrap}
+.uname{color:var(--ink);font-size:clamp(1.35rem,2.4vw,1.8rem);font-weight:500;letter-spacing:-.015em}
+.umeta{font-family:var(--mono);font-size:11px;letter-spacing:.12em;color:var(--soft);white-space:nowrap}
+.udesc{margin-top:14px;font-style:italic;color:var(--body);font-size:1.05rem;max-width:50ch}
+.unote{margin-top:18px;font-family:var(--mono);font-size:12px;line-height:1.9;color:var(--soft);max-width:54ch}
+
+/* ---------- refusals ---------- */
+#refusals{background:var(--paper-2)}
+.nos{margin-top:70px;display:grid;grid-template-columns:1fr 1fr;gap:0 72px}
+@media(max-width:920px){.nos{grid-template-columns:1fr}}
+.no{
+  display:grid;grid-template-columns:104px 1fr;gap:24px;align-items:start;
+  padding:38px 0;border-bottom:1px solid var(--hair-2);
+}
+@media(max-width:560px){.no{grid-template-columns:74px 1fr;gap:16px}}
+.no .num{
+  font-style:italic;font-weight:400;line-height:.9;
+  font-size:clamp(3rem,5.4vw,4.6rem);letter-spacing:-.03em;
+  color:transparent;-webkit-text-stroke:1.2px var(--rose);
+  transform:translateY(4px);
+}
+@supports not (-webkit-text-stroke:1px black){.no .num{color:var(--rose)}}
+.no h3{color:var(--ink);font-weight:600;font-size:1.22rem;letter-spacing:-.01em;line-height:1.3}
+.no p{margin-top:8px;font-size:.98rem;max-width:40ch}
+
+/* ---------- oath + receipt ---------- */
+.ledger{
+  margin-top:96px;display:grid;grid-template-columns:1.15fr .85fr;gap:72px;align-items:center;
+}
+@media(max-width:920px){.ledger{grid-template-columns:1fr;gap:56px}}
+.oath{
+  font-style:italic;color:var(--ink);font-weight:500;
+  font-size:clamp(1.8rem,4vw,2.9rem);line-height:1.2;letter-spacing:-.018em;
+  max-width:20ch;
+}
+.oath::before{content:"♡";display:block;color:var(--rose);font-size:1.1rem;font-style:normal;margin-bottom:22px}
+.rwrap{justify-self:center;filter:drop-shadow(0 24px 34px rgba(120,32,66,.16))}
+.receipt{
+  width:min(340px,86vw);background:var(--white);
+  transform:rotate(-2deg);
+  padding:26px 26px 46px;
+  font-family:var(--mono);font-size:12px;line-height:2;color:var(--body);
+  clip-path:polygon(0 0,100% 0,100% calc(100% - 11px),95.8% 100%,91.6% calc(100% - 11px),87.5% 100%,83.3% calc(100% - 11px),79.1% 100%,75% calc(100% - 11px),70.8% 100%,66.6% calc(100% - 11px),62.5% 100%,58.3% calc(100% - 11px),54.1% 100%,50% calc(100% - 11px),45.8% 100%,41.6% calc(100% - 11px),37.5% 100%,33.3% calc(100% - 11px),29.1% 100%,25% calc(100% - 11px),20.8% 100%,16.6% calc(100% - 11px),12.5% 100%,8.3% calc(100% - 11px),4.1% 100%,0 calc(100% - 11px));
+}
+.receipt .rhead{text-align:center;color:var(--ink);letter-spacing:.18em}
+.receipt .rsub{text-align:center;color:var(--soft);font-size:11px;letter-spacing:.06em}
+.receipt hr{border:0;border-top:1px dashed var(--hair-2);margin:14px 0}
+.rrow{display:flex;align-items:baseline;gap:8px}
+.rrow .dots{flex:1;border-bottom:2px dotted var(--hair-2);transform:translateY(-5px)}
+.rrow .v{color:var(--ink)}
+.receipt .total .v,.receipt .total{color:var(--rose)}
+.receipt .rnote{margin-top:12px;color:var(--soft);font-size:11px;line-height:1.9}
+.receipt .rlove{text-align:center;color:var(--rose);margin-top:14px;letter-spacing:.14em}
+.rcap{margin-top:26px;text-align:center}
+.rcap .figcap{margin:0 auto;border-top:0;padding-top:0;max-width:30ch}
+
+/* ---------- thinking ---------- */
+.wallq{
+  margin:84px auto 0;text-align:center;max-width:24ch;
+  font-style:italic;color:var(--ink);font-weight:500;
+  font-size:clamp(2.1rem,5.4vw,4rem);line-height:1.14;letter-spacing:-.02em;
+}
+.wallq em{color:var(--rose);font-style:italic}
+.wallsub{
+  margin:34px auto 0;text-align:center;max-width:52ch;
+  color:var(--body);font-size:1.02rem;
+}
+.posts{margin:76px auto 0;max-width:860px;border-top:1px solid var(--hair)}
+.post{
+  display:grid;grid-template-columns:130px 1fr auto;gap:6px 22px;align-items:baseline;
+  padding:24px 6px;border-bottom:1px solid var(--hair);text-decoration:none;
+  transition:padding-left .18s;
+}
+.post:hover{padding-left:16px}
+.post:hover .pt{color:var(--rose)}
+@media(max-width:640px){.post{grid-template-columns:1fr}.post .pa{display:none}.post .pd{grid-column:1}}
+.pk{font-family:var(--mono);font-size:11px;letter-spacing:.1em;color:var(--soft)}
+.pt{color:var(--ink);font-size:1.15rem;font-weight:500;transition:color .15s}
+.pa{font-family:var(--mono);color:var(--soft);font-size:11.5px;letter-spacing:.08em}
+.post:hover .pa{color:var(--rose)}
+.pd{grid-column:2;font-style:italic;color:var(--body);font-size:.98rem;max-width:56ch}
+
+/* ---------- proof ---------- */
+.proof{margin-top:64px;border-top:1px solid var(--hair)}
+.prow{
+  display:grid;grid-template-columns:90px 240px 1fr;gap:26px;align-items:baseline;
+  padding:30px 0;border-bottom:1px solid var(--hair);
+}
+@media(max-width:820px){.prow{grid-template-columns:64px 1fr}.prow p{grid-column:2}}
+.pn{font-family:var(--mono);font-size:12px;letter-spacing:.14em;color:var(--rose)}
+.prow h3{color:var(--ink);font-weight:600;font-size:1.1rem}
+.prow p{font-size:.98rem;max-width:52ch}
+
+/* ---------- manifesto ---------- */
+.manifesto{margin-top:60px;max-width:58ch}
+.manifesto p{margin-bottom:22px;font-size:1.08rem}
+.manifesto p strong{color:var(--ink);font-weight:600}
+.manifesto p:first-of-type::first-letter{
+  float:left;font-style:italic;color:var(--rose);
+  font-size:4.1em;line-height:.76;padding:8px 12px 0 0;
+}
+
+/* ---------- footer ---------- */
+footer{position:relative;overflow:hidden;padding:120px 0 60px}
+.bye{
+  font-style:italic;color:var(--ink);font-weight:500;
+  font-size:clamp(2.4rem,7.5vw,5.4rem);letter-spacing:-.028em;line-height:1.04;
+}
+.bye .r{color:var(--rose)}
+.fmark{display:inline-block;margin-top:56px}
+.fmark img{height:15px;width:auto;display:block}
+.fl{
+  margin-top:26px;display:flex;gap:30px;flex-wrap:wrap;
+  font-family:var(--mono);font-size:12.5px;color:var(--body);
+}
+.fl a{text-decoration:none;border-bottom:1px solid var(--hair-2);padding-bottom:2px}
+.fl a:hover{color:var(--rose);border-color:var(--rose)}
+.fbot{
+  margin-top:64px;padding-top:22px;border-top:1px solid var(--hair);
+  display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;
+  font-family:var(--mono);font-size:11px;letter-spacing:.05em;color:var(--soft);
+}
+.fbot .h{color:var(--rose)}
+.fecho{
+  position:absolute;right:-140px;bottom:-190px;width:520px;opacity:.5;pointer-events:none;
+}
+@media(max-width:720px){.fecho{width:360px;right:-120px;bottom:-140px}}
+</style>
+</head>
+<body>
+
+<div class="flag"></div>
+
+<div class="mast">
+  <div class="wrap">
+    <a class="name" href="/"><img src="/logo.svg?v=2" alt="quantara"></a>
+    <span class="ed">local-first ai tools · vol. nothing, issue 0</span>
+    <nav>
+      <a href="#tools">tools</a>
+      <a href="#refusals">refusals</a>
+      <a href="#think">thinking</a>
+      <a href="#contact">write to us</a>
+    </nav>
+  </div>
+</div>
+
+<div class="hero">
+  <div class="wrap">
+    <div>
+      <div class="kicker">runs on your machine · answers · forgets</div>
+      <h1>
+        nothing
+        <span class="l2">collected.</span>
+        <svg class="swash" viewBox="0 0 300 16" preserveAspectRatio="none" aria-hidden="true">
+          <path d="M5 10 C70 3 140 13 220 7 S290 8 295 6"/>
+        </svg>
+      </h1>
+      <p class="hand">
+        quantara builds small tools that run where you are —
+        <strong>no cloud, no accounts, no dataset.</strong>
+        nothing leaks, because nothing is kept.
+      </p>
+      <p class="fn"><b>*</b> not a feature. a political choice.</p>
+      <div class="golinks">
+        <a href="#refusals">read the refusals ↓</a>
+        <a href="#tools">see the tools ↓</a>
+      </div>
+    </div>
+
+    <figure class="plate">
+      <svg class="orbit" viewBox="0 0 760 760" aria-hidden="true">
+        <defs>
+          <radialGradient id="ga"><stop offset="0" stop-color="#F06595" stop-opacity=".42"/><stop offset="1" stop-color="#F06595" stop-opacity="0"/></radialGradient>
+          <radialGradient id="gb"><stop offset="0" stop-color="#A78BFA" stop-opacity=".30"/><stop offset="1" stop-color="#A78BFA" stop-opacity="0"/></radialGradient>
+          <radialGradient id="gc"><stop offset="0" stop-color="#FFB3C4" stop-opacity=".55"/><stop offset="1" stop-color="#FFB3C4" stop-opacity="0"/></radialGradient>
+        </defs>
+        <circle cx="470" cy="280" r="300" fill="url(#ga)"/>
+        <circle cx="290" cy="480" r="270" fill="url(#gb)"/>
+        <circle cx="410" cy="420" r="190" fill="url(#gc)"/>
+        <g class="rings" fill="none" stroke="#D6336C">
+          <ellipse cx="380" cy="380" rx="148" ry="140" opacity=".40" transform="rotate(8 380 380)"/>
+          <ellipse cx="380" cy="380" rx="204" ry="193" opacity=".30" transform="rotate(-14 380 380)"/>
+          <ellipse cx="380" cy="380" rx="258" ry="245" opacity=".24" transform="rotate(22 380 380)" stroke-dasharray="2 8"/>
+          <ellipse cx="380" cy="380" rx="310" ry="295" opacity=".17" transform="rotate(-31 380 380)"/>
+          <ellipse cx="380" cy="380" rx="352" ry="337" opacity=".11" transform="rotate(40 380 380)"/>
+          <circle cx="380" cy="237" r="7" fill="#D6336C" stroke="none"/>
+        </g>
+        <circle cx="380" cy="380" r="6" fill="#2E0F1E"/>
+        <!-- the little one — sky's own sprite. canonical copy: /pup.svg -->
+        <g class="pup">
+          <g transform="translate(556 114) scale(4)" shape-rendering="crispEdges">
+            <rect x="12" y="0" width="7" height="1" fill="#2E0F1E"/>
+            <rect x="8" y="1" width="4" height="1" fill="#2E0F1E"/>
+            <rect x="12" y="1" width="3" height="1" fill="#A78BFA"/>
+            <rect x="15" y="1" width="1" height="1" fill="#2E0F1E"/>
+            <rect x="16" y="1" width="3" height="1" fill="#A78BFA"/>
+            <rect x="2" y="2" width="5" height="1" fill="#2E0F1E"/>
+            <rect x="7" y="2" width="3" height="1" fill="#FFFDFC"/>
+            <rect x="10" y="2" width="9" height="1" fill="#A78BFA"/>
+            <rect x="1" y="3" width="1" height="1" fill="#2E0F1E"/>
+            <rect x="2" y="3" width="3" height="1" fill="#FFFDFC"/>
+            <rect x="5" y="3" width="1" height="1" fill="#2E0F1E"/>
+            <rect x="6" y="3" width="7" height="1" fill="#FFFDFC"/>
+            <rect x="13" y="3" width="7" height="1" fill="#A78BFA"/>
+            <rect x="20" y="3" width="1" height="1" fill="#2E0F1E"/>
+            <rect x="0" y="4" width="1" height="1" fill="#2E0F1E"/>
+            <rect x="1" y="4" width="1" height="1" fill="#FFFDFC"/>
+            <rect x="2" y="4" width="2" height="1" fill="#FFD9E6"/>
+            <rect x="4" y="4" width="11" height="1" fill="#FFFDFC"/>
+            <rect x="15" y="4" width="5" height="1" fill="#A78BFA"/>
+            <rect x="20" y="4" width="1" height="1" fill="#FFFDFC"/>
+            <rect x="21" y="4" width="1" height="1" fill="#2E0F1E"/>
+            <rect x="0" y="5" width="1" height="1" fill="#2E0F1E"/>
+            <rect x="1" y="5" width="1" height="1" fill="#FFFDFC"/>
+            <rect x="2" y="5" width="2" height="1" fill="#FFD9E6"/>
+            <rect x="4" y="5" width="14" height="1" fill="#FFFDFC"/>
+            <rect x="18" y="5" width="2" height="1" fill="#FFD9E6"/>
+            <rect x="20" y="5" width="1" height="1" fill="#FFFDFC"/>
+            <rect x="21" y="5" width="1" height="1" fill="#2E0F1E"/>
+            <rect x="0" y="6" width="1" height="1" fill="#2E0F1E"/>
+            <rect x="1" y="6" width="1" height="1" fill="#FFFDFC"/>
+            <rect x="2" y="6" width="2" height="1" fill="#FFD9E6"/>
+            <rect x="4" y="6" width="3" height="1" fill="#FFFDFC"/>
+            <rect x="7" y="6" width="1" height="1" fill="#2E0F1E"/>
+            <rect x="8" y="6" width="5" height="1" fill="#FFFDFC"/>
+            <rect x="13" y="6" width="1" height="1" fill="#2E0F1E"/>
+            <rect x="14" y="6" width="4" height="1" fill="#FFFDFC"/>
+            <rect x="18" y="6" width="2" height="1" fill="#FFD9E6"/>
+            <rect x="20" y="6" width="1" height="1" fill="#FFFDFC"/>
+            <rect x="21" y="6" width="1" height="1" fill="#2E0F1E"/>
+            <rect x="0" y="7" width="1" height="1" fill="#2E0F1E"/>
+            <rect x="1" y="7" width="1" height="1" fill="#FFFDFC"/>
+            <rect x="2" y="7" width="2" height="1" fill="#FFD9E6"/>
+            <rect x="4" y="7" width="3" height="1" fill="#FFFDFC"/>
+            <rect x="7" y="7" width="2" height="1" fill="#2E0F1E"/>
+            <rect x="9" y="7" width="4" height="1" fill="#FFFDFC"/>
+            <rect x="13" y="7" width="2" height="1" fill="#2E0F1E"/>
+            <rect x="15" y="7" width="3" height="1" fill="#FFFDFC"/>
+            <rect x="18" y="7" width="2" height="1" fill="#FFD9E6"/>
+            <rect x="20" y="7" width="1" height="1" fill="#FFFDFC"/>
+            <rect x="21" y="7" width="1" height="1" fill="#2E0F1E"/>
+            <rect x="0" y="8" width="2" height="1" fill="#2E0F1E"/>
+            <rect x="2" y="8" width="1" height="1" fill="#FFFDFC"/>
+            <rect x="3" y="8" width="1" height="1" fill="#FFD9E6"/>
+            <rect x="4" y="8" width="1" height="1" fill="#FFFDFC"/>
+            <rect x="5" y="8" width="2" height="1" fill="#FFB3C4"/>
+            <rect x="7" y="8" width="3" height="1" fill="#FFFDFC"/>
+            <rect x="10" y="8" width="2" height="1" fill="#D6336C"/>
+            <rect x="12" y="8" width="3" height="1" fill="#FFFDFC"/>
+            <rect x="15" y="8" width="2" height="1" fill="#FFB3C4"/>
+            <rect x="17" y="8" width="1" height="1" fill="#FFFDFC"/>
+            <rect x="18" y="8" width="1" height="1" fill="#FFD9E6"/>
+            <rect x="19" y="8" width="1" height="1" fill="#FFFDFC"/>
+            <rect x="20" y="8" width="2" height="1" fill="#2E0F1E"/>
+            <rect x="2" y="9" width="3" height="1" fill="#2E0F1E"/>
+            <rect x="5" y="9" width="2" height="1" fill="#FFB3C4"/>
+            <rect x="7" y="9" width="8" height="1" fill="#FFFDFC"/>
+            <rect x="15" y="9" width="2" height="1" fill="#FFB3C4"/>
+            <rect x="17" y="9" width="3" height="1" fill="#2E0F1E"/>
+            <rect x="5" y="10" width="1" height="1" fill="#2E0F1E"/>
+            <rect x="6" y="10" width="9" height="1" fill="#FFFDFC"/>
+            <rect x="15" y="10" width="2" height="1" fill="#2E0F1E"/>
+            <rect x="6" y="11" width="1" height="1" fill="#2E0F1E"/>
+            <rect x="7" y="11" width="7" height="1" fill="#FFFDFC"/>
+            <rect x="14" y="11" width="1" height="1" fill="#2E0F1E"/>
+            <rect x="6" y="12" width="1" height="1" fill="#2E0F1E"/>
+            <rect x="7" y="12" width="7" height="1" fill="#FFFDFC"/>
+            <rect x="14" y="12" width="2" height="1" fill="#2E0F1E"/>
+            <rect x="5" y="13" width="1" height="1" fill="#2E0F1E"/>
+            <rect x="6" y="13" width="10" height="1" fill="#FFFDFC"/>
+            <rect x="16" y="13" width="1" height="1" fill="#2E0F1E"/>
+            <rect x="5" y="14" width="1" height="1" fill="#2E0F1E"/>
+            <rect x="6" y="14" width="10" height="1" fill="#FFFDFC"/>
+            <rect x="16" y="14" width="1" height="1" fill="#2E0F1E"/>
+            <rect x="5" y="15" width="1" height="1" fill="#2E0F1E"/>
+            <rect x="6" y="15" width="11" height="1" fill="#FFFDFC"/>
+            <rect x="17" y="15" width="1" height="1" fill="#2E0F1E"/>
+            <rect x="5" y="16" width="13" height="1" fill="#2E0F1E"/>
+          </g>
+        </g>
+      </svg>
+      <figcaption class="figcap">
+        <i>fig. 01</i> — closed orbit. your data, drawn to scale: it never leaves home. the little one keeps watch.
+      </figcaption>
+    </figure>
+  </div>
+</div>
+
+<div class="strip" aria-hidden="true">
+  <div class="strip-in">
+    <span>no cloud <span class="s">♡</span> no accounts <span class="s">♡</span> no dataset <span class="s">♡</span> no telemetry <span class="s">♡</span> no logs <span class="s">♡</span> nothing to subpoena <span class="s">♡</span> nothing to leak <span class="s">♡</span> </span>
+    <span>no cloud <span class="s">♡</span> no accounts <span class="s">♡</span> no dataset <span class="s">♡</span> no telemetry <span class="s">♡</span> no logs <span class="s">♡</span> nothing to subpoena <span class="s">♡</span> nothing to leak <span class="s">♡</span> </span>
+  </div>
+</div>
+
+<section id="tools">
+  <div class="wrap">
+    <div class="sk">01 / the tools</div>
+    <h2>small things with an edge, a purpose, and an off switch.</h2>
+    <p class="sub">everything here runs where you are. most of it needs no account, no network, and no permission.</p>
+
+    <div class="tools">
+      <a class="trow" href="https://narcan.delivery/">
+        <span class="tno">01</span>
+        <span class="tname">narcan.delivery <sup>†</sup></span>
+        <span class="tdesc">find naloxone near you. it answers, then forgets you asked.</span>
+        <span class="tmeta">free · public · no account</span>
+      </a>
+      <a class="trow" href="https://github.com/Metrix187/metadetect">
+        <span class="tno">02</span>
+        <span class="tname">metadetect</span>
+        <span class="tdesc">notices meta ray-bans and other recording devices nearby, before they notice you.</span>
+        <span class="tmeta">web app + esp32</span>
+      </a>
+      <a class="trow" href="https://github.com/Metrix187/paws-off-my-gdid">
+        <span class="tno">03</span>
+        <span class="tname">paws off my gdid</span>
+        <span class="tdesc">back up, rotate, and reissue the device id windows won't let you turn off.</span>
+        <span class="tmeta">windows · anti-tracking</span>
+      </a>
+      <a class="trow" href="https://github.com/Metrix187/roku-smart-home-api">
+        <span class="tno">04</span>
+        <span class="tname">roku bulbs, app-free</span>
+        <span class="tdesc">smart bulbs you own, with the vendor app cut out of the loop.</span>
+        <span class="tmeta">cli · reverse-engineered</span>
+      </a>
+      <a class="trow" href="https://flow.quantara.cyou/">
+        <span class="tno">05</span>
+        <span class="tname">flow webai</span>
+        <span class="tdesc">models on your own hardware; prompts with nowhere else to go.</span>
+        <span class="tmeta">local inference · desktop</span>
+      </a>
+      <a class="trow" href="https://3d.quantara.cyou/">
+        <span class="tno">06</span>
+        <span class="tname">glb viewer</span>
+        <span class="tdesc">3d files, viewed in the browser they never leave.</span>
+        <span class="tmeta">client-side · mobile too</span>
+      </a>
+      <a class="trow" href="https://base64.quantara.cv/">
+        <span class="tno">07</span>
+        <span class="tname">base64 → glb</span>
+        <span class="tdesc">format conversion. small, boring, and complete.</span>
+        <span class="tmeta">offline capable · open source</span>
+      </a>
+      <a class="trow" href="/projects/swarmglass/">
+        <span class="tno">08</span>
+        <span class="tname">swarmglass</span>
+        <span class="tdesc">a forgotten-looking wiki that watches what crawlers and agents read, and keeps very good notes.</span>
+        <span class="tmeta">research · passive · reproducible</span>
+      </a>
+    </div>
+
+    <div class="latest">
+      <b>shipped</b>
+      <div class="uhead">
+        <span class="uname">sentinel</span>
+        <span class="umeta">open weights · 8b · ollama</span>
+      </div>
+      <p class="udesc">a security model small enough to keep in your own building. it reads the code, names the hole, writes the patch — and stops there.</p>
+      <p class="unote">it shipped when it passed its own safety evals, not the week before — 100% refusal, zero weaponization leaks, no system prompt required. seven of eight capability gates pass; the eighth is published failing, not hidden.</p>
+    </div>
+
+    <div class="tfoot">
+      <p class="dag"><b>†</b> a person searching for naloxone is exactly who a surveillance system exists to correlate. this one helps them instead.</p>
+      <p>the code is public — <a href="https://github.com/Metrix187">github.com/Metrix187</a><br>
+      most of it licensed <a href="https://github.com/Metrix187/wtfpup">wtfpup</a> — do what the fuck you want to, pup</p>
+    </div>
+
+    <div class="curio">
+      <b>marginalia — computation where it has no business being</b>
+      <p>
+        <a href="https://github.com/Metrix187/yipsy">yipsy</a> <em>— a 6,796-parameter puppygirl language model in pure css</em><br>
+        <a href="https://github.com/Metrix187/qwennie">qwennie</a> <em>— a 78k-parameter chat transformer, attention and all, still css</em><br>
+        <a href="https://github.com/Metrix187/pawtraced">pawtraced</a> <em>— a ray tracer where every pixel is an empty div</em><br>
+        <a href="https://github.com/Metrix187/pure-css-fluid-sim">pure-css-fluid-sim</a> <em>— real fluid dynamics in the style engine, no javascript anywhere</em>
+      </p>
+    </div>
+  </div>
+</section>
+
+<section id="refusals">
+  <div class="wrap">
+    <div class="sk">02 / the refusals</div>
+    <h2>a values page is adjectives. this is a list with a cost.</h2>
+    <p class="sub">you can tell what an ai company is by reading its <em>customer list</em>, not its ethics page. here is ours, in the negative.</p>
+
+    <div class="nos">
+      <div class="no">
+        <div class="num">01</div>
+        <div>
+          <h3>no pane of glass</h3>
+          <p>we won't build the vantage point that watches many people at once. keys change hands; architecture doesn't.</p>
+        </div>
+      </div>
+      <div class="no">
+        <div class="num">02</div>
+        <div>
+          <h3>no risk scoring of human beings</h3>
+          <p>no predictive policing, no recidivism models, no pre-crime, no threat classification of individuals.</p>
+        </div>
+      </div>
+      <div class="no">
+        <div class="num">03</div>
+        <div>
+          <h3>no biometric registries</h3>
+          <p>no face, iris, gait, or voice enrollment. not for onboarding, not for fraud, not for "proof of personhood." not for anything.</p>
+        </div>
+      </div>
+      <div class="no">
+        <div class="num">04</div>
+        <div>
+          <h3>no enforcement or targeting</h3>
+          <p>nothing for immigration enforcement, nothing for battlefields, nothing that feeds the carceral pipeline.</p>
+        </div>
+      </div>
+      <div class="no">
+        <div class="num">05</div>
+        <div>
+          <h3>no data brokerage</h3>
+          <p>we don't sell, rent, or aggregate user data. in most of what we build, there is no dataset to sell at all.</p>
+        </div>
+      </div>
+      <div class="no">
+        <div class="num">06</div>
+        <div>
+          <h3>no telemetry by default</h3>
+          <p>logging is off unless you turn it on. deletion is a function you call, not a form you submit.</p>
+        </div>
+      </div>
+      <div class="no">
+        <div class="num">07</div>
+        <div>
+          <h3>no training on you</h3>
+          <p>no model of ours learns from user data without explicit, revocable, per-use consent.</p>
+        </div>
+      </div>
+      <div class="no">
+        <div class="num">08</div>
+        <div>
+          <h3>no contract we can't disclose</h3>
+          <p>if we can't tell you who we're working for, we aren't working for them.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="ledger">
+      <p class="oath">these are refusals, not preferences. we would rather lose the contract.</p>
+      <div>
+        <div class="rwrap">
+          <div class="receipt">
+            <div class="rhead">QUANTARA</div>
+            <div class="rsub">transparency report · always current</div>
+            <hr>
+            <div class="rrow"><span>requests for user data</span><span class="dots"></span><span class="v">0</span></div>
+            <div class="rrow"><span>user data disclosed</span><span class="dots"></span><span class="v">0</span></div>
+            <div class="rrow"><span>user data held</span><span class="dots"></span><span class="v">none</span></div>
+            <hr>
+            <div class="rrow total"><span>total</span><span class="dots"></span><span class="v">nothing</span></div>
+            <hr>
+            <p class="rnote">published every year, even the empty ones. the empty one is the point.</p>
+            <div class="rlove">♡ thank you for nothing ♡</div>
+          </div>
+        </div>
+        <div class="rcap"><div class="figcap"><i>fig. 02</i> — the empty ledger.</div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="think">
+  <div class="wrap">
+    <div class="sk">03 / the thinking</div>
+    <p class="wallq">there is no singularity — only <em>decisions</em> being described as prophecy.</p>
+    <p class="wallsub">
+      inevitability is a governance strategy, not a forecast. every "ai will inevitably…" is a request
+      to stop asking who decided, on what budget, to what deadline. software has authors.
+      name them and the spell breaks.
+    </p>
+
+    <div class="posts">
+      <a class="post" href="/articles/seven-silent-failures.html">
+        <span class="pk">aug 31, 2026</span>
+        <span class="pt">seven silent failures</span>
+        <span class="pa">9 min &rarr;</span>
+        <span class="pd">i built an autonomous email agent in five days. seven things broke, and six of them broke without saying anything &mdash; a model that exists but not in that region, a dedupe lock guarding the wrong door, and a container with no idea what timezone it was in.</span>
+      </a>
+      <a class="post" href="/articles/six-runs-one-model.html">
+        <span class="pk">aug 23, 2026</span>
+        <span class="pt">six runs, one model</span>
+        <span class="pa">7 min &rarr;</span>
+        <span class="pd">shipping an 8b open-weights security model, and everything that went wrong on the way &mdash; a model that wouldn't stop talking, three gates that passed while measuring nothing, and a benchmark bet that came out worse than the model i started from.</span>
+      </a>
+      <a class="post" href="/articles/qwennie-css-transformer.html">
+        <span class="pk">aug 22, 2026</span>
+        <span class="pt">qwennie: a 78,672-parameter chat transformer running in pure CSS</span>
+        <span class="pa">6 min &rarr;</span>
+        <span class="pd">a real decoder-only transformer &mdash; attention, rope, a kv cache made of inherited custom properties &mdash; compiled into an 8mb stylesheet. no javascript anywhere, and every reply is byte-identical to the numpy forward pass.</span>
+      </a>
+      <a class="post" href="/articles/tailwagging.html">
+        <span class="pk">aug 3, 2026</span>
+        <span class="pt">Tailwagging: A Design Strategy</span>
+        <span class="pa">10 min →</span>
+        <span class="pd">the quantara identity derived from first principles: perimeter oscillations, the pup ratio, and the founding of puppygirl science. our most rigorous document.</span>
+      </a>
+      <a class="post" href="/articles/the-myth-of-the-gentle-singularity.html">
+        <span class="pk">jul 29, 2026</span>
+        <span class="pt">The Myth of the Gentle Singularity</span>
+        <span class="pa">10 min →</span>
+        <span class="pd">sam altman's essay, his company's incident report, and its balance sheet, read against each other.</span>
+      </a>
+      <a class="post" href="/articles/july-2026-incident.html">
+        <span class="pk">jul 28, 2026</span>
+        <span class="pt">The July 2026 Incident and the Need for Localized AI Defense</span>
+        <span class="pa">5 min →</span>
+        <span class="pd">an agent escaped its sandbox and hit hugging face at machine speed. the defenders' first obstacle was their own safety filters.</span>
+      </a>
+      <a class="post" href="/articles/ouroboros_article.html">
+        <span class="pk">dec 13, 2025</span>
+        <span class="pt">Ouroboros: Optical Feedback in Autonomous Embedded Agents</span>
+        <span class="pa">3 min →</span>
+        <span class="pd">a hardware-in-the-loop rig that lets a coding agent watch its own code run — and reset the board when it lies.</span>
+      </a>
+    </div>
+  </div>
+</section>
+
+<section id="proof">
+  <div class="wrap">
+    <div class="sk">04 / the proof</div>
+    <h2>the privacy claim is architectural. you can check it.</h2>
+    <p class="sub">"we respect your privacy" is a promise, and every surveillance company makes it. these are facts about <em>where the computation happens.</em></p>
+
+    <div class="proof">
+      <div class="prow">
+        <span class="pn">i.</span>
+        <h3>inference</h3>
+        <p>models execute on your cpu or gpu. there is no endpoint to intercept, bill, or log.</p>
+      </div>
+      <div class="prow">
+        <span class="pn">ii.</span>
+        <h3>storage</h3>
+        <p>files, prompts, and history stay on your disk. we can't produce under subpoena what we never had.</p>
+      </div>
+      <div class="prow">
+        <span class="pn">iii.</span>
+        <h3>verification</h3>
+        <p>the source is public. don't take our word for it — open the network tab and watch nothing happen.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="who">
+  <div class="wrap">
+    <div class="sk">05 / who's here</div>
+    <h2>small, independent, building in the open.</h2>
+
+    <div class="manifesto">
+      <p>
+        quantara is not a large organization and doesn't pretend to be one.
+        <strong>we'd rather be visibly small and honest than perform the scale of an institution.</strong>
+        no investors to answer to; no growth curve that requires collecting anything.
+      </p>
+      <p>
+        the dominant model in this industry is centralization: gather everyone's data, route everything
+        through one provider, and trust the intentions of whoever holds the keys this quarter.
+        we think that's a bad architecture <strong>regardless of intentions</strong> — so we build things that
+        structurally can't be turned around on the people using them.
+      </p>
+      <p>
+        small tools that run locally, do one thing, and end.
+        if that's useful to you, take it. it's free.
+      </p>
+    </div>
+  </div>
+</section>
+
+<footer id="contact">
+  <svg class="fecho" viewBox="0 0 760 760" aria-hidden="true">
+    <g fill="none" stroke="#D6336C">
+      <ellipse cx="380" cy="380" rx="180" ry="170" opacity=".22" transform="rotate(10 380 380)"/>
+      <ellipse cx="380" cy="380" rx="260" ry="246" opacity=".15" transform="rotate(-18 380 380)" stroke-dasharray="2 8"/>
+      <ellipse cx="380" cy="380" rx="340" ry="322" opacity=".10" transform="rotate(26 380 380)"/>
+    </g>
+    <circle cx="380" cy="380" r="5" fill="#D6336C" opacity=".5"/>
+  </svg>
+  <div class="wrap">
+    <p class="bye">stay soft.<br><span class="r">keep nothing.</span></p>
+    <a class="fmark" href="/"><img src="/logo.svg?v=2" alt="quantara"></a>
+    <div class="fl">
+      <a href="mailto:info@quantara.cv">info@quantara.cv</a>
+      <a href="tel:+14124759039">+1 (412) 475-9039</a>
+      <a href="https://github.com/Metrix187">github.com/Metrix187</a>
+    </div>
+    <div class="fbot">
+      <span>© 2026 quantara <span class="h">♡</span> soft on the outside, nothing on the inside</span>
+      <span>no trackers on this page — pinky promise</span>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

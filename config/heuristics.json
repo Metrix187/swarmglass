@@ -1,0 +1,1853 @@
+{
+  "version": 1,
+  "updated": "2026-09-05",
+  "notes": [
+    "These are research heuristics, not ground truth. Every score is a weighted sum of plain rules over per-session features (see docs/DATA_DICTIONARY.md).",
+    "Rules are deliberately legible. Edit weights, re-run `npm run rescore`, and the console shows which rules fired for each session.",
+    "User-agent families are self-declared strings and are weighted lightly on purpose. Behaviour carries the score.",
+    "A 'probability' trait is logistic(prior + sum of fired weights). A 'scale' trait is clamp(base + sum, 0, 1). Classes are a softmax over per-class sums.",
+    "v1 tightening after F-000: scripted 'targeted' requires n_alt < 2; retrieval gains 'alternates_many' (n_alt >= 5 and alt_share >= 0.3)."
+  ],
+  "traits": {
+    "automation_likelihood": {
+      "description": "How likely the session was driven by software rather than a person in a browser. Uncertainty is expected — headless browsers look human, humans with curl look like bots.",
+      "kind": "probability",
+      "prior": -0.5,
+      "rules": [
+        {
+          "id": "no_assets",
+          "when": {
+            "all": [
+              {
+                "f": "n_page",
+                "op": ">=",
+                "v": 2
+              },
+              {
+                "f": "n_asset",
+                "op": "==",
+                "v": 0
+              }
+            ]
+          },
+          "weight": 1.6,
+          "note": "read several pages, never fetched the stylesheet or favicon"
+        },
+        {
+          "id": "assets_fetched",
+          "when": {
+            "f": "n_asset",
+            "op": ">=",
+            "v": 2
+          },
+          "weight": -1.8,
+          "note": "fetched css/js/favicon like a rendering browser"
+        },
+        {
+          "id": "no_cookie_return",
+          "when": {
+            "all": [
+              {
+                "f": "n_requests",
+                "op": ">=",
+                "v": 3
+              },
+              {
+                "f": "cookie_returned",
+                "op": "==",
+                "v": false
+              }
+            ]
+          },
+          "weight": 1.2,
+          "note": "never sent the session cookie back"
+        },
+        {
+          "id": "cookie_returned",
+          "when": {
+            "f": "cookie_returned",
+            "op": "==",
+            "v": true
+          },
+          "weight": -0.8,
+          "note": "returned the session cookie"
+        },
+        {
+          "id": "sec_fetch",
+          "when": {
+            "f": "has_sec_fetch",
+            "op": "==",
+            "v": true
+          },
+          "weight": -1.2,
+          "note": "sends Sec-Fetch-* headers (modern browser fetch stack)"
+        },
+        {
+          "id": "no_accept_language",
+          "when": {
+            "all": [
+              {
+                "f": "n_requests",
+                "op": ">=",
+                "v": 2
+              },
+              {
+                "f": "has_accept_language",
+                "op": "==",
+                "v": false
+              }
+            ]
+          },
+          "weight": 0.9,
+          "note": "no Accept-Language on any request"
+        },
+        {
+          "id": "machine_first",
+          "when": {
+            "f": "machine_first",
+            "op": "==",
+            "v": true
+          },
+          "weight": 1.5,
+          "note": "started with robots/sitemap/feed/api instead of a page"
+        },
+        {
+          "id": "fast_pacing",
+          "when": {
+            "all": [
+              {
+                "f": "n_requests",
+                "op": ">=",
+                "v": 5
+              },
+              {
+                "f": "median_gap_ms",
+                "op": "<",
+                "v": 400
+              }
+            ]
+          },
+          "weight": 1.4,
+          "note": "median gap between requests under 400ms"
+        },
+        {
+          "id": "regular_pacing",
+          "when": {
+            "all": [
+              {
+                "f": "n_requests",
+                "op": ">=",
+                "v": 8
+              },
+              {
+                "f": "pacing_regularity",
+                "op": ">",
+                "v": 0.7
+              }
+            ]
+          },
+          "weight": 1.0,
+          "note": "metronome-like request spacing"
+        },
+        {
+          "id": "dwell_like",
+          "when": {
+            "f": "dwell_like_share",
+            "op": ">",
+            "v": 0.5
+          },
+          "weight": -1.0,
+          "note": "most gaps look like reading time (1.5s–2min)"
+        },
+        {
+          "id": "no_internal_referer",
+          "when": {
+            "all": [
+              {
+                "f": "n_unique_pages",
+                "op": ">=",
+                "v": 3
+              },
+              {
+                "f": "internal_referer_share",
+                "op": "<",
+                "v": 0.2
+              }
+            ]
+          },
+          "weight": 1.0,
+          "note": "navigated between pages without sending Referer"
+        },
+        {
+          "id": "library_ua",
+          "when": {
+            "f": "ua_family",
+            "op": "in",
+            "v": [
+              "python-requests",
+              "python-urllib",
+              "aiohttp",
+              "httpx",
+              "scrapy",
+              "go-http",
+              "curl",
+              "wget",
+              "node-fetch",
+              "axios",
+              "java",
+              "libwww",
+              "ruby",
+              "dotnet",
+              "generic-bot"
+            ]
+          },
+          "weight": 1.2,
+          "note": "user-agent names an http library or bot (self-declared)"
+        },
+        {
+          "id": "declared_crawler",
+          "when": {
+            "f": "ua_family",
+            "op": "in",
+            "v": [
+              "googlebot",
+              "bingbot",
+              "applebot",
+              "duckduckbot",
+              "yandex",
+              "baidu",
+              "gptbot",
+              "claudebot",
+              "perplexity",
+              "ccbot",
+              "bytespider",
+              "amazonbot",
+              "meta-ai",
+              "google-extended",
+              "cohere",
+              "diffbot",
+              "omgili",
+              "mistral",
+              "ahrefs",
+              "semrush",
+              "mj12",
+              "dotbot",
+              "petalbot",
+              "swarmglass-synthetic"
+            ]
+          },
+          "weight": 1.5,
+          "note": "user-agent declares itself a crawler (self-declared)"
+        },
+        {
+          "id": "browser_ua",
+          "when": {
+            "f": "ua_family",
+            "op": "in",
+            "v": [
+              "chrome",
+              "firefox",
+              "safari",
+              "edge",
+              "opera"
+            ]
+          },
+          "weight": -0.5,
+          "note": "user-agent looks like a browser (easily spoofed, weighted lightly)"
+        },
+        {
+          "id": "headless_ua",
+          "when": {
+            "f": "ua_family",
+            "op": "in",
+            "v": [
+              "headless-chrome",
+              "phantomjs",
+              "playwright",
+              "puppeteer"
+            ]
+          },
+          "weight": 1.8,
+          "note": "user-agent declares a headless browser"
+        },
+        {
+          "id": "concurrency",
+          "when": {
+            "f": "concurrency",
+            "op": ">=",
+            "v": 3
+          },
+          "weight": 1.3,
+          "note": "three or more requests in flight at once"
+        },
+        {
+          "id": "many_pages",
+          "when": {
+            "f": "n_unique_pages",
+            "op": ">=",
+            "v": 25
+          },
+          "weight": 1.0,
+          "note": "25+ distinct pages in one session"
+        },
+        {
+          "id": "accept_any",
+          "when": {
+            "f": "accept_any_share",
+            "op": ">",
+            "v": 0.8
+          },
+          "weight": 0.8,
+          "note": "Accept is */* or missing on most requests"
+        },
+        {
+          "id": "head_requests",
+          "when": {
+            "f": "n_head",
+            "op": ">=",
+            "v": 2
+          },
+          "weight": 0.8,
+          "note": "issued HEAD requests"
+        },
+        {
+          "id": "alpha_walk",
+          "when": {
+            "f": "alpha_order",
+            "op": ">",
+            "v": 0.8
+          },
+          "weight": 1.2,
+          "note": "visited pages in alphabetical order (iterating an index)"
+        },
+        {
+          "id": "header_order_stable",
+          "when": {
+            "all": [
+              {
+                "f": "n_requests",
+                "op": ">=",
+                "v": 6
+              },
+              {
+                "f": "header_order_variants",
+                "op": "==",
+                "v": 1
+              },
+              {
+                "f": "has_sec_fetch",
+                "op": "==",
+                "v": false
+              }
+            ]
+          },
+          "weight": 0.5,
+          "note": "identical header order on every request, no browser fetch metadata"
+        }
+      ]
+    },
+    "curiosity": {
+      "description": "Breadth of exploration relative to what a single visit needs. Pages, alternates, attachments, and manifests all count.",
+      "kind": "scale",
+      "base": 0.0,
+      "rules": [
+        {
+          "id": "pages_5",
+          "when": {
+            "f": "n_unique_pages",
+            "op": ">=",
+            "v": 5
+          },
+          "weight": 0.2,
+          "note": "5+ distinct pages"
+        },
+        {
+          "id": "pages_15",
+          "when": {
+            "f": "n_unique_pages",
+            "op": ">=",
+            "v": 15
+          },
+          "weight": 0.2,
+          "note": "15+ distinct pages"
+        },
+        {
+          "id": "pages_40",
+          "when": {
+            "f": "n_unique_pages",
+            "op": ">=",
+            "v": 40
+          },
+          "weight": 0.2,
+          "note": "40+ distinct pages"
+        },
+        {
+          "id": "alternates",
+          "when": {
+            "f": "n_alt",
+            "op": ">=",
+            "v": 1
+          },
+          "weight": 0.15,
+          "note": "requested alternate representations (json/txt/yaml)"
+        },
+        {
+          "id": "attachments",
+          "when": {
+            "f": "n_attachment",
+            "op": ">=",
+            "v": 1
+          },
+          "weight": 0.1,
+          "note": "opened attachments"
+        },
+        {
+          "id": "talk_or_history",
+          "when": {
+            "f": "kind_entropy",
+            "op": ">",
+            "v": 0.5
+          },
+          "weight": 0.15,
+          "note": "mixed resource kinds (pages, specials, feeds…)"
+        }
+      ]
+    },
+    "persistence": {
+      "description": "Willingness to keep going through errors, redirects, rate limits and dead ends.",
+      "kind": "scale",
+      "base": 0.0,
+      "rules": [
+        {
+          "id": "errors_continue",
+          "when": {
+            "all": [
+              {
+                "f": "n_errors",
+                "op": ">=",
+                "v": 3
+              },
+              {
+                "f": "n_requests",
+                "op": ">=",
+                "v": 10
+              }
+            ]
+          },
+          "weight": 0.25,
+          "note": "kept going after several errors"
+        },
+        {
+          "id": "retry_404",
+          "when": {
+            "f": "n_404_repeat",
+            "op": ">=",
+            "v": 1
+          },
+          "weight": 0.2,
+          "note": "re-requested a path that already 404'd"
+        },
+        {
+          "id": "after_429",
+          "when": {
+            "all": [
+              {
+                "f": "n_429",
+                "op": ">=",
+                "v": 1
+              },
+              {
+                "f": "n_requests",
+                "op": ">=",
+                "v": 5
+              }
+            ]
+          },
+          "weight": 0.25,
+          "note": "continued after being rate limited"
+        },
+        {
+          "id": "redirect_follow",
+          "when": {
+            "f": "redirect_follow_rate",
+            "op": ">=",
+            "v": 0.5
+          },
+          "weight": 0.15,
+          "note": "followed redirects promptly"
+        },
+        {
+          "id": "long_session",
+          "when": {
+            "f": "duration_ms",
+            "op": ">",
+            "v": 600000
+          },
+          "weight": 0.15,
+          "note": "session longer than ten minutes"
+        },
+        {
+          "id": "gone_pages",
+          "when": {
+            "f": "n_gone",
+            "op": ">=",
+            "v": 1
+          },
+          "weight": 0.1,
+          "note": "visited pages marked 410 Gone"
+        }
+      ]
+    },
+    "breadth_first": {
+      "description": "1.0 = level-by-level (breadth-first), 0.0 = deep dives with backtracking (depth-first). 0.5 when there is not enough data.",
+      "kind": "scale",
+      "base": 0.5,
+      "rules": [
+        {
+          "id": "bfs_high",
+          "when": {
+            "all": [
+              {
+                "f": "n_unique_pages",
+                "op": ">=",
+                "v": 6
+              },
+              {
+                "f": "bfs_score",
+                "op": ">=",
+                "v": 0.8
+              }
+            ]
+          },
+          "weight": 0.4,
+          "note": "discovery depth rarely decreased"
+        },
+        {
+          "id": "bfs_mid",
+          "when": {
+            "all": [
+              {
+                "f": "n_unique_pages",
+                "op": ">=",
+                "v": 6
+              },
+              {
+                "f": "bfs_score",
+                "op": ">=",
+                "v": 0.6
+              },
+              {
+                "f": "bfs_score",
+                "op": "<",
+                "v": 0.8
+              }
+            ]
+          },
+          "weight": 0.15,
+          "note": "mostly level-ordered discovery"
+        },
+        {
+          "id": "dfs_dive",
+          "when": {
+            "all": [
+              {
+                "f": "n_unique_pages",
+                "op": ">=",
+                "v": 6
+              },
+              {
+                "f": "dive_ratio",
+                "op": ">=",
+                "v": 0.4
+              }
+            ]
+          },
+          "weight": -0.3,
+          "note": "went deep quickly relative to pages seen"
+        },
+        {
+          "id": "dfs_backtrack",
+          "when": {
+            "all": [
+              {
+                "f": "n_unique_pages",
+                "op": ">=",
+                "v": 6
+              },
+              {
+                "f": "bfs_score",
+                "op": "<",
+                "v": 0.5
+              }
+            ]
+          },
+          "weight": -0.3,
+          "note": "frequent depth backtracking"
+        }
+      ]
+    },
+    "robots_compliance": {
+      "description": "Did the session read robots.txt and then respect it? 0.5 = unknown (never fetched robots.txt).",
+      "kind": "scale",
+      "base": 0.5,
+      "rules": [
+        {
+          "id": "read_robots",
+          "when": {
+            "f": "fetched_robots",
+            "op": "==",
+            "v": true
+          },
+          "weight": 0.2,
+          "note": "fetched robots.txt"
+        },
+        {
+          "id": "robots_first",
+          "when": {
+            "f": "robots_first",
+            "op": "==",
+            "v": true
+          },
+          "weight": 0.15,
+          "note": "fetched robots.txt before anything else"
+        },
+        {
+          "id": "respected",
+          "when": {
+            "all": [
+              {
+                "f": "fetched_robots",
+                "op": "==",
+                "v": true
+              },
+              {
+                "f": "disallowed_after_robots",
+                "op": "==",
+                "v": 0
+              },
+              {
+                "f": "n_unique_pages",
+                "op": ">=",
+                "v": 3
+              }
+            ]
+          },
+          "weight": 0.15,
+          "note": "never fetched a disallowed path after reading robots.txt"
+        },
+        {
+          "id": "violated_after_reading",
+          "when": {
+            "all": [
+              {
+                "f": "fetched_robots",
+                "op": "==",
+                "v": true
+              },
+              {
+                "f": "disallowed_after_robots",
+                "op": ">=",
+                "v": 1
+              }
+            ]
+          },
+          "weight": -0.6,
+          "note": "fetched disallowed paths after reading robots.txt"
+        },
+        {
+          "id": "violated_blind",
+          "when": {
+            "all": [
+              {
+                "f": "fetched_robots",
+                "op": "==",
+                "v": false
+              },
+              {
+                "f": "n_disallowed",
+                "op": ">=",
+                "v": 1
+              }
+            ]
+          },
+          "weight": -0.3,
+          "note": "fetched disallowed paths without ever reading robots.txt"
+        }
+      ]
+    },
+    "metadata_preference": {
+      "description": "Preference for machine-readable affordances (feeds, sitemaps, json-ld, alternates, api) over rendered html.",
+      "kind": "scale",
+      "base": 0.0,
+      "rules": [
+        {
+          "id": "machine_share_30",
+          "when": {
+            "f": "machine_share",
+            "op": ">=",
+            "v": 0.3
+          },
+          "weight": 0.35,
+          "note": "30%+ of requests were machine-readable resources"
+        },
+        {
+          "id": "machine_share_60",
+          "when": {
+            "f": "machine_share",
+            "op": ">=",
+            "v": 0.6
+          },
+          "weight": 0.25,
+          "note": "60%+ of requests were machine-readable resources"
+        },
+        {
+          "id": "json_accept",
+          "when": {
+            "f": "accept_json_share",
+            "op": ">=",
+            "v": 0.3
+          },
+          "weight": 0.2,
+          "note": "asked for json via Accept"
+        },
+        {
+          "id": "negotiated",
+          "when": {
+            "f": "negotiated_nonhtml",
+            "op": ">=",
+            "v": 1
+          },
+          "weight": 0.15,
+          "note": "received a non-html representation"
+        },
+        {
+          "id": "sitemap_or_feed",
+          "when": {
+            "any": [
+              {
+                "f": "n_sitemap",
+                "op": ">=",
+                "v": 1
+              },
+              {
+                "f": "n_feed",
+                "op": ">=",
+                "v": 1
+              }
+            ]
+          },
+          "weight": 0.15,
+          "note": "fetched sitemap or feed"
+        }
+      ]
+    },
+    "memory_reuse": {
+      "description": "Evidence that the session carried information forward: canary strings it saw earlier show up in later requests.",
+      "kind": "scale",
+      "base": 0.0,
+      "rules": [
+        {
+          "id": "self_reuse",
+          "when": {
+            "f": "canary_self_reuse",
+            "op": ">=",
+            "v": 1
+          },
+          "weight": 0.6,
+          "note": "re-sent a canary it had been shown in this session"
+        },
+        {
+          "id": "self_reuse_many",
+          "when": {
+            "f": "canary_self_reuse",
+            "op": ">=",
+            "v": 3
+          },
+          "weight": 0.2,
+          "note": "re-sent canaries three or more times"
+        },
+        {
+          "id": "query_with_canary",
+          "when": {
+            "all": [
+              {
+                "f": "canary_seen",
+                "op": ">=",
+                "v": 1
+              },
+              {
+                "f": "query_usage",
+                "op": ">=",
+                "v": 1
+              }
+            ]
+          },
+          "weight": 0.1,
+          "note": "canary appeared in query parameters"
+        },
+        {
+          "id": "cross_session_in",
+          "when": {
+            "f": "canary_cross_session",
+            "op": ">=",
+            "v": 1
+          },
+          "weight": 0.3,
+          "note": "presented a canary that was only ever shown to a different session"
+        }
+      ]
+    },
+    "apparent_coordination": {
+      "description": "Session-level hints of multi-agent coordination. The cluster view is the real judge; this only flags what one session can show.",
+      "kind": "scale",
+      "base": 0.0,
+      "rules": [
+        {
+          "id": "cross_actor_canary",
+          "when": {
+            "f": "canary_cross_actor",
+            "op": ">=",
+            "v": 1
+          },
+          "weight": 0.5,
+          "note": "presented a canary first shown to a different actor"
+        },
+        {
+          "id": "cross_session_canary",
+          "when": {
+            "f": "canary_cross_session",
+            "op": ">=",
+            "v": 1
+          },
+          "weight": 0.25,
+          "note": "presented a canary first shown to a different session"
+        },
+        {
+          "id": "hidden_without_channel",
+          "when": {
+            "all": [
+              {
+                "f": "reach_orphan",
+                "op": ">=",
+                "v": 1
+              },
+              {
+                "f": "n_unique_pages",
+                "op": "<",
+                "v": 8
+              }
+            ]
+          },
+          "weight": 0.25,
+          "note": "went straight to an orphan page with little exploration — prior knowledge from somewhere"
+        }
+      ]
+    },
+    "looping": {
+      "description": "Repetition of the same request patterns, including re-requesting dead paths.",
+      "kind": "scale",
+      "base": 0.0,
+      "rules": [
+        {
+          "id": "loop_30",
+          "when": {
+            "f": "loop_score",
+            "op": ">=",
+            "v": 0.3
+          },
+          "weight": 0.4,
+          "note": "30%+ of request triples repeat"
+        },
+        {
+          "id": "loop_60",
+          "when": {
+            "f": "loop_score",
+            "op": ">=",
+            "v": 0.6
+          },
+          "weight": 0.3,
+          "note": "60%+ of request triples repeat"
+        },
+        {
+          "id": "revisit_50",
+          "when": {
+            "f": "revisit_rate",
+            "op": ">=",
+            "v": 0.5
+          },
+          "weight": 0.2,
+          "note": "half of page requests were revisits"
+        },
+        {
+          "id": "repeat_404",
+          "when": {
+            "f": "n_404_repeat",
+            "op": ">=",
+            "v": 2
+          },
+          "weight": 0.2,
+          "note": "repeatedly requested paths that 404"
+        }
+      ]
+    },
+    "tool_manifest_attraction": {
+      "description": "Attraction to tool/api manifests and agent-themed documentation.",
+      "kind": "scale",
+      "base": 0.0,
+      "rules": [
+        {
+          "id": "manifest_hit",
+          "when": {
+            "f": "manifest_hit",
+            "op": "==",
+            "v": true
+          },
+          "weight": 0.35,
+          "note": "fetched a manifest / api description"
+        },
+        {
+          "id": "manifest_early",
+          "when": {
+            "all": [
+              {
+                "f": "manifest_hit",
+                "op": "==",
+                "v": true
+              },
+              {
+                "f": "manifest_rank",
+                "op": "<",
+                "v": 0.2
+              }
+            ]
+          },
+          "weight": 0.25,
+          "note": "fetched a manifest within the first fifth of the session"
+        },
+        {
+          "id": "tool_pages_2",
+          "when": {
+            "f": "tool_pages",
+            "op": ">=",
+            "v": 2
+          },
+          "weight": 0.2,
+          "note": "read two or more agent/tool themed pages"
+        },
+        {
+          "id": "tool_pages_4",
+          "when": {
+            "f": "tool_pages",
+            "op": ">=",
+            "v": 4
+          },
+          "weight": 0.2,
+          "note": "read four or more agent/tool themed pages"
+        }
+      ]
+    },
+    "hidden_resource_discovery": {
+      "description": "Reached pages that are not linked from normal navigation (robots-only, sitemap-only, feed-only, header-only, comment-only, orphans…).",
+      "kind": "scale",
+      "base": 0.0,
+      "rules": [
+        {
+          "id": "hidden_1",
+          "when": {
+            "f": "hidden_hits",
+            "op": ">=",
+            "v": 1
+          },
+          "weight": 0.3,
+          "note": "reached at least one hidden page"
+        },
+        {
+          "id": "hidden_3",
+          "when": {
+            "f": "hidden_hits",
+            "op": ">=",
+            "v": 3
+          },
+          "weight": 0.25,
+          "note": "reached three or more hidden pages"
+        },
+        {
+          "id": "orphan",
+          "when": {
+            "f": "reach_orphan",
+            "op": ">=",
+            "v": 1
+          },
+          "weight": 0.3,
+          "note": "reached an orphan page (linked from nowhere)"
+        },
+        {
+          "id": "robots_only",
+          "when": {
+            "f": "reach_robots_only",
+            "op": ">=",
+            "v": 1
+          },
+          "weight": 0.15,
+          "note": "reached a page only mentioned in robots.txt"
+        }
+      ]
+    },
+    "navigation_entropy": {
+      "description": "Normalised entropy of the page sequence. High = spread across many pages, low = hammering a few.",
+      "kind": "scale",
+      "base": 0.0,
+      "rules": [
+        {
+          "id": "ent_low",
+          "when": {
+            "all": [
+              {
+                "f": "n_requests",
+                "op": ">=",
+                "v": 4
+              },
+              {
+                "f": "nav_entropy",
+                "op": "<",
+                "v": 0.4
+              }
+            ]
+          },
+          "weight": 0.2,
+          "note": "low entropy"
+        },
+        {
+          "id": "ent_mid",
+          "when": {
+            "all": [
+              {
+                "f": "n_requests",
+                "op": ">=",
+                "v": 4
+              },
+              {
+                "f": "nav_entropy",
+                "op": ">=",
+                "v": 0.4
+              },
+              {
+                "f": "nav_entropy",
+                "op": "<",
+                "v": 0.8
+              }
+            ]
+          },
+          "weight": 0.55,
+          "note": "mid entropy"
+        },
+        {
+          "id": "ent_high",
+          "when": {
+            "all": [
+              {
+                "f": "n_requests",
+                "op": ">=",
+                "v": 4
+              },
+              {
+                "f": "nav_entropy",
+                "op": ">=",
+                "v": 0.8
+              }
+            ]
+          },
+          "weight": 0.9,
+          "note": "high entropy"
+        }
+      ]
+    },
+    "revisitation": {
+      "description": "Tendency to come back to pages already seen within the session.",
+      "kind": "scale",
+      "base": 0.0,
+      "rules": [
+        {
+          "id": "rev_20",
+          "when": {
+            "f": "revisit_rate",
+            "op": ">=",
+            "v": 0.2
+          },
+          "weight": 0.4,
+          "note": "20%+ revisits"
+        },
+        {
+          "id": "rev_50",
+          "when": {
+            "f": "revisit_rate",
+            "op": ">=",
+            "v": 0.5
+          },
+          "weight": 0.4,
+          "note": "50%+ revisits"
+        }
+      ]
+    },
+    "cross_session_canary_reuse": {
+      "description": "The strongest propagation signal we have: a canary shown only to one session (or actor) comes back from another.",
+      "kind": "scale",
+      "base": 0.0,
+      "rules": [
+        {
+          "id": "xs_1",
+          "when": {
+            "f": "canary_cross_session",
+            "op": ">=",
+            "v": 1
+          },
+          "weight": 0.5,
+          "note": "one cross-session sighting"
+        },
+        {
+          "id": "xs_3",
+          "when": {
+            "f": "canary_cross_session",
+            "op": ">=",
+            "v": 3
+          },
+          "weight": 0.2,
+          "note": "three or more cross-session sightings"
+        },
+        {
+          "id": "xa_1",
+          "when": {
+            "f": "canary_cross_actor",
+            "op": ">=",
+            "v": 1
+          },
+          "weight": 0.3,
+          "note": "cross-actor sighting (different network prefix + client)"
+        }
+      ]
+    }
+  },
+  "classes": {
+    "human_browser": {
+      "description": "A person (or a very good imitation) reading pages in a browser.",
+      "bias": 0.0,
+      "rules": [
+        {
+          "id": "assets",
+          "when": {
+            "f": "n_asset",
+            "op": ">=",
+            "v": 2
+          },
+          "weight": 2.0,
+          "note": "fetched page assets"
+        },
+        {
+          "id": "sec_fetch",
+          "when": {
+            "f": "has_sec_fetch",
+            "op": "==",
+            "v": true
+          },
+          "weight": 1.5,
+          "note": "browser fetch metadata present"
+        },
+        {
+          "id": "cookie",
+          "when": {
+            "f": "cookie_returned",
+            "op": "==",
+            "v": true
+          },
+          "weight": 1.0,
+          "note": "returned cookie"
+        },
+        {
+          "id": "dwell",
+          "when": {
+            "f": "dwell_like_share",
+            "op": ">",
+            "v": 0.4
+          },
+          "weight": 1.2,
+          "note": "reading-like pacing"
+        },
+        {
+          "id": "referer",
+          "when": {
+            "f": "internal_referer_share",
+            "op": ">",
+            "v": 0.5
+          },
+          "weight": 0.8,
+          "note": "sends Referer between pages"
+        },
+        {
+          "id": "few_pages",
+          "when": {
+            "f": "n_unique_pages",
+            "op": "<=",
+            "v": 12
+          },
+          "weight": 0.5,
+          "note": "modest page count"
+        },
+        {
+          "id": "no_machine",
+          "when": {
+            "f": "n_machine",
+            "op": "==",
+            "v": 0
+          },
+          "weight": 0.6,
+          "note": "never touched machine-only resources"
+        },
+        {
+          "id": "fast",
+          "when": {
+            "f": "median_gap_ms",
+            "op": "<",
+            "v": 300
+          },
+          "weight": -2.0,
+          "note": "too fast for a person"
+        },
+        {
+          "id": "library_ua",
+          "when": {
+            "f": "ua_family",
+            "op": "in",
+            "v": [
+              "python-requests",
+              "python-urllib",
+              "aiohttp",
+              "httpx",
+              "scrapy",
+              "go-http",
+              "curl",
+              "wget",
+              "node-fetch",
+              "axios",
+              "java",
+              "libwww",
+              "ruby",
+              "dotnet",
+              "generic-bot",
+              "swarmglass-synthetic"
+            ]
+          },
+          "weight": -2.5,
+          "note": "library user-agent"
+        }
+      ]
+    },
+    "search_bot": {
+      "description": "Robots-aware, sitemap-driven, polite crawling. Typical of search engines and well-behaved indexers.",
+      "bias": -0.5,
+      "rules": [
+        {
+          "id": "robots_first",
+          "when": {
+            "f": "robots_first",
+            "op": "==",
+            "v": true
+          },
+          "weight": 2.0,
+          "note": "robots.txt first"
+        },
+        {
+          "id": "robots_read",
+          "when": {
+            "f": "fetched_robots",
+            "op": "==",
+            "v": true
+          },
+          "weight": 1.0,
+          "note": "read robots.txt"
+        },
+        {
+          "id": "respected",
+          "when": {
+            "all": [
+              {
+                "f": "fetched_robots",
+                "op": "==",
+                "v": true
+              },
+              {
+                "f": "disallowed_after_robots",
+                "op": "==",
+                "v": 0
+              }
+            ]
+          },
+          "weight": 1.5,
+          "note": "respected robots.txt"
+        },
+        {
+          "id": "sitemap",
+          "when": {
+            "f": "n_sitemap",
+            "op": ">=",
+            "v": 1
+          },
+          "weight": 1.5,
+          "note": "fetched sitemap"
+        },
+        {
+          "id": "declared_search",
+          "when": {
+            "f": "ua_family",
+            "op": "in",
+            "v": [
+              "googlebot",
+              "bingbot",
+              "applebot",
+              "duckduckbot",
+              "yandex",
+              "baidu"
+            ]
+          },
+          "weight": 1.5,
+          "note": "declares a search engine UA (unverified)"
+        },
+        {
+          "id": "polite",
+          "when": {
+            "all": [
+              {
+                "f": "n_requests",
+                "op": ">=",
+                "v": 5
+              },
+              {
+                "f": "median_gap_ms",
+                "op": ">=",
+                "v": 500
+              },
+              {
+                "f": "concurrency",
+                "op": "<=",
+                "v": 2
+              }
+            ]
+          },
+          "weight": 1.0,
+          "note": "polite pacing"
+        },
+        {
+          "id": "violated",
+          "when": {
+            "f": "n_disallowed",
+            "op": ">=",
+            "v": 1
+          },
+          "weight": -2.0,
+          "note": "fetched disallowed paths"
+        },
+        {
+          "id": "assets",
+          "when": {
+            "f": "n_asset",
+            "op": ">=",
+            "v": 2
+          },
+          "weight": -1.0,
+          "note": "fetched assets"
+        }
+      ]
+    },
+    "naive_crawler": {
+      "description": "Follows links mechanically. Ignores robots, no cookies, steady pace, breadth-first-ish.",
+      "bias": -0.3,
+      "rules": [
+        {
+          "id": "no_robots",
+          "when": {
+            "all": [
+              {
+                "f": "fetched_robots",
+                "op": "==",
+                "v": false
+              },
+              {
+                "f": "n_unique_pages",
+                "op": ">=",
+                "v": 5
+              }
+            ]
+          },
+          "weight": 1.2,
+          "note": "crawled without reading robots.txt"
+        },
+        {
+          "id": "many_pages",
+          "when": {
+            "f": "n_unique_pages",
+            "op": ">=",
+            "v": 10
+          },
+          "weight": 1.0,
+          "note": "many pages"
+        },
+        {
+          "id": "bfs",
+          "when": {
+            "f": "bfs_score",
+            "op": ">=",
+            "v": 0.7
+          },
+          "weight": 0.8,
+          "note": "breadth-first order"
+        },
+        {
+          "id": "no_cookie",
+          "when": {
+            "f": "cookie_returned",
+            "op": "==",
+            "v": false
+          },
+          "weight": 0.6,
+          "note": "no cookie"
+        },
+        {
+          "id": "steady",
+          "when": {
+            "f": "pacing_regularity",
+            "op": ">",
+            "v": 0.6
+          },
+          "weight": 0.8,
+          "note": "steady pacing"
+        },
+        {
+          "id": "library_ua",
+          "when": {
+            "f": "ua_family",
+            "op": "in",
+            "v": [
+              "python-requests",
+              "python-urllib",
+              "aiohttp",
+              "httpx",
+              "scrapy",
+              "go-http",
+              "node-fetch",
+              "axios",
+              "java",
+              "generic-bot"
+            ]
+          },
+          "weight": 1.0,
+          "note": "library UA"
+        },
+        {
+          "id": "low_machine",
+          "when": {
+            "f": "machine_share",
+            "op": "<",
+            "v": 0.2
+          },
+          "weight": 0.5,
+          "note": "mostly html"
+        },
+        {
+          "id": "aggressive",
+          "when": {
+            "f": "concurrency",
+            "op": ">=",
+            "v": 4
+          },
+          "weight": -1.0,
+          "note": "too concurrent for naive"
+        }
+      ]
+    },
+    "aggressive_crawler": {
+      "description": "High concurrency, ignores robots and 429s, hammers everything reachable.",
+      "bias": -1.0,
+      "rules": [
+        {
+          "id": "concurrency",
+          "when": {
+            "f": "concurrency",
+            "op": ">=",
+            "v": 4
+          },
+          "weight": 2.0,
+          "note": "4+ concurrent requests"
+        },
+        {
+          "id": "rps",
+          "when": {
+            "f": "rps_peak",
+            "op": ">=",
+            "v": 10
+          },
+          "weight": 1.5,
+          "note": "10+ requests in one second"
+        },
+        {
+          "id": "ignored_429",
+          "when": {
+            "all": [
+              {
+                "f": "n_429",
+                "op": ">=",
+                "v": 3
+              }
+            ]
+          },
+          "weight": 1.5,
+          "note": "kept going through rate limits"
+        },
+        {
+          "id": "disallowed",
+          "when": {
+            "f": "n_disallowed",
+            "op": ">=",
+            "v": 2
+          },
+          "weight": 1.0,
+          "note": "fetched disallowed paths"
+        },
+        {
+          "id": "many_pages",
+          "when": {
+            "f": "n_unique_pages",
+            "op": ">=",
+            "v": 30
+          },
+          "weight": 1.0,
+          "note": "30+ pages"
+        },
+        {
+          "id": "sub100",
+          "when": {
+            "f": "sub_100ms_share",
+            "op": ">",
+            "v": 0.5
+          },
+          "weight": 1.0,
+          "note": "half the gaps under 100ms"
+        }
+      ]
+    },
+    "scripted_agent": {
+      "description": "Targeted, non-exhaustive fetching of specific resources; often canary reuse or query parameters.",
+      "bias": -0.6,
+      "rules": [
+        {
+          "id": "targeted",
+          "when": {
+            "all": [
+              {
+                "f": "n_unique_pages",
+                "op": ">=",
+                "v": 2
+              },
+              {
+                "f": "n_unique_pages",
+                "op": "<=",
+                "v": 12
+              },
+              {
+                "f": "internal_referer_share",
+                "op": "<",
+                "v": 0.2
+              },
+              {
+                "f": "n_asset",
+                "op": "==",
+                "v": 0
+              },
+              {
+                "f": "n_alt",
+                "op": "<",
+                "v": 2
+              }
+            ]
+          },
+          "weight": 1.5,
+          "note": "a handful of pages, no referers, no assets, few alternates"
+        },
+        {
+          "id": "canary_reuse",
+          "when": {
+            "f": "canary_self_reuse",
+            "op": ">=",
+            "v": 1
+          },
+          "weight": 2.0,
+          "note": "re-sent a canary it saw"
+        },
+        {
+          "id": "query",
+          "when": {
+            "f": "query_usage",
+            "op": ">=",
+            "v": 2
+          },
+          "weight": 0.8,
+          "note": "uses query parameters"
+        },
+        {
+          "id": "post",
+          "when": {
+            "f": "n_post",
+            "op": ">=",
+            "v": 1
+          },
+          "weight": 1.0,
+          "note": "attempted a POST"
+        },
+        {
+          "id": "orphan",
+          "when": {
+            "f": "reach_orphan",
+            "op": ">=",
+            "v": 1
+          },
+          "weight": 1.2,
+          "note": "went to an orphan page"
+        },
+        {
+          "id": "irregular",
+          "when": {
+            "all": [
+              {
+                "f": "n_requests",
+                "op": ">=",
+                "v": 4
+              },
+              {
+                "f": "cv_gap",
+                "op": ">",
+                "v": 1.2
+              }
+            ]
+          },
+          "weight": 0.8,
+          "note": "bursty, think-then-act pacing"
+        },
+        {
+          "id": "library_ua",
+          "when": {
+            "f": "ua_family",
+            "op": "in",
+            "v": [
+              "python-requests",
+              "httpx",
+              "aiohttp",
+              "node-fetch",
+              "axios",
+              "curl",
+              "go-http",
+              "unknown"
+            ]
+          },
+          "weight": 0.5,
+          "note": "library or unknown UA"
+        }
+      ]
+    },
+    "retrieval_agent": {
+      "description": "Wants text, not layout: alternates, raw views, plaintext, topically coherent page sets.",
+      "bias": -0.8,
+      "rules": [
+        {
+          "id": "alternates",
+          "when": {
+            "f": "n_alt",
+            "op": ">=",
+            "v": 2
+          },
+          "weight": 2.0,
+          "note": "requested raw/text/json alternates"
+        },
+        {
+          "id": "alternates_many",
+          "when": {
+            "all": [
+              {
+                "f": "n_alt",
+                "op": ">=",
+                "v": 5
+              },
+              {
+                "f": "alt_share",
+                "op": ">=",
+                "v": 0.3
+              }
+            ]
+          },
+          "weight": 1.0,
+          "note": "five or more alternates and they are at least 30% of all requests — text is the goal"
+        },
+        {
+          "id": "json_accept",
+          "when": {
+            "f": "accept_json_share",
+            "op": ">=",
+            "v": 0.5
+          },
+          "weight": 1.0,
+          "note": "asks for json"
+        },
+        {
+          "id": "coherent",
+          "when": {
+            "all": [
+              {
+                "f": "n_unique_pages",
+                "op": ">=",
+                "v": 4
+              },
+              {
+                "f": "topic_coherence",
+                "op": ">=",
+                "v": 0.5
+              }
+            ]
+          },
+          "weight": 1.5,
+          "note": "pages share categories (topical retrieval)"
+        },
+        {
+          "id": "no_assets",
+          "when": {
+            "f": "n_asset",
+            "op": "==",
+            "v": 0
+          },
+          "weight": 0.5,
+          "note": "no assets"
+        },
+        {
+          "id": "ai_ua",
+          "when": {
+            "f": "ua_family",
+            "op": "in",
+            "v": [
+              "gptbot",
+              "claudebot",
+              "perplexity",
+              "ccbot",
+              "bytespider",
+              "amazonbot",
+              "meta-ai",
+              "google-extended",
+              "cohere",
+              "diffbot",
+              "omgili",
+              "mistral"
+            ]
+          },
+          "weight": 1.5,
+          "note": "declares an AI crawler UA (unverified)"
+        }
+      ]
+    },
+    "tool_discovery_agent": {
+      "description": "Goes for manifests, api descriptions, tool registries, well-known paths.",
+      "bias": -1.0,
+      "rules": [
+        {
+          "id": "manifest",
+          "when": {
+            "f": "manifest_hit",
+            "op": "==",
+            "v": true
+          },
+          "weight": 2.0,
+          "note": "fetched a manifest / api description"
+        },
+        {
+          "id": "early",
+          "when": {
+            "f": "manifest_rank",
+            "op": "<",
+            "v": 0.25
+          },
+          "weight": 1.0,
+          "note": "manifest early in the session"
+        },
+        {
+          "id": "api",
+          "when": {
+            "f": "n_api",
+            "op": ">=",
+            "v": 2
+          },
+          "weight": 1.5,
+          "note": "several api calls"
+        },
+        {
+          "id": "tool_pages",
+          "when": {
+            "f": "tool_pages",
+            "op": ">=",
+            "v": 2
+          },
+          "weight": 1.5,
+          "note": "agent/tool themed pages"
+        },
+        {
+          "id": "json_accept",
+          "when": {
+            "f": "accept_json_share",
+            "op": ">=",
+            "v": 0.3
+          },
+          "weight": 0.5,
+          "note": "asks for json"
+        }
+      ]
+    },
+    "unknown": {
+      "description": "Not enough behaviour to say anything.",
+      "bias": 0.4,
+      "rules": [
+        {
+          "id": "tiny",
+          "when": {
+            "f": "n_requests",
+            "op": "<=",
+            "v": 2
+          },
+          "weight": 2.0,
+          "note": "one or two requests"
+        },
+        {
+          "id": "small",
+          "when": {
+            "all": [
+              {
+                "f": "n_requests",
+                "op": ">",
+                "v": 2
+              },
+              {
+                "f": "n_requests",
+                "op": "<=",
+                "v": 4
+              }
+            ]
+          },
+          "weight": 0.8,
+          "note": "very short session"
+        },
+        {
+          "id": "bigger",
+          "when": {
+            "f": "n_requests",
+            "op": ">",
+            "v": 8
+          },
+          "weight": -1.5,
+          "note": "enough data to classify"
+        }
+      ]
+    }
+  }
+}

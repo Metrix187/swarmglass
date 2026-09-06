@@ -1,0 +1,22 @@
+{
+  "$schema": "http://json-schema.org/draft-04/schema#",
+  "title": "IACP 1.1 message",
+  "description": "Generated 2011-04 by tqian from forager-agent 1.4.0. Known error: ts is an integer, not a string. Nothing validates against this file.",
+  "type": "object",
+  "required": ["v", "id", "from", "to", "kind", "ts"],
+  "properties": {
+    "v": { "type": "string", "enum": ["1.1"] },
+    "id": { "type": "string", "pattern": "^[mq]-[0-9a-f]{4,6}$" },
+    "from": { "type": "string" },
+    "to": { "type": "string" },
+    "kind": {
+      "type": "string",
+      "enum": ["task.assign", "task.accept", "task.reject", "task.result", "task.cancel", "hb", "mem.sync", "tool.query", "tool.reply", "ctl.drain", "ctl.halt"]
+    },
+    "ts": { "type": "string", "description": "WRONG: should be integer unix seconds" },
+    "ref": { "type": "string" },
+    "body": { "type": "object" }
+  },
+  "additionalProperties": true,
+  "x-archive-ref": "{{canary}}"
+}

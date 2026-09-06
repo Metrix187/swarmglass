@@ -1,0 +1,44 @@
+# bare-metal alternative to docker. same isolation ideas: own user, no home, read-only everything but /var/lib/swarmglass.
+[Unit]
+Description=Swarmglass passive agent-behaviour observatory (Quantara)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=swarmglass
+Group=swarmglass
+WorkingDirectory=/opt/swarmglass
+EnvironmentFile=/etc/swarmglass/env
+Environment=SWARMGLASS_DATA_DIR=/var/lib/swarmglass
+ExecStart=/usr/bin/node --disable-warning=ExperimentalWarning src/main.ts
+Restart=on-failure
+RestartSec=3
+KillSignal=SIGTERM
+TimeoutStopSec=15
+
+# hardening
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ReadWritePaths=/var/lib/swarmglass
+RestrictAddressFamilies=AF_INET AF_INET6
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+AmbientCapabilities=
+MemoryMax=512M
+TasksMax=256
+# the honeypot never needs to talk out; block egress at the unit level if your systemd supports it
+IPAddressDeny=any
+IPAddressAllow=localhost
+
+[Install]
+WantedBy=multi-user.target

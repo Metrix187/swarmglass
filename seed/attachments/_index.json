@@ -1,0 +1,16 @@
+{
+  "iacp-1.1-schema.json": { "page": "Internal_Agent_Communication_Protocol" },
+  "toolreg-manifest-2015-09.json": { "page": "Tool_Registry" },
+  "cmsync-snapshot-sample.yaml": { "page": "Memory_Synchronization" },
+  "model-matrix-2016-01.json": { "page": "Model_Compatibility_Matrix" },
+  "incident-template.txt": { "page": "Orchestrator_Recovery" },
+  "node-registry-2016-03.yaml": { "page": "Worker_Node_Registry" },
+  "node-registry-archive.yaml": { "page": "Worker_Node_Registry_Archive", "discover": "sitemap_only" },
+  "iacp2-frame-notes.txt": { "page": "Deprecated_Agent_API" },
+  "bugs-export-2016-04.csv": { "page": "Known_Agent_Bugs" },
+  "releases.json": { "page": "Release_History" },
+  "antfarm-singlehost.conf": { "page": "Configuration_Reference" },
+  "test-log-2014-export.csv": { "page": "Model_Compatibility_Matrix/Test_Log_2014" },
+  "ops-log-2015-02.log": { "page": null, "channels": ["stale_index"], "discover": "stale_index_only" },
+  "phero.conf.example": { "page": null, "discover": "orphan" }
+}

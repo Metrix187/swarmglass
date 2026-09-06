@@ -1,0 +1,19 @@
+# queend nodes --export, 2016-03-28 02:00 UTC
+# archive ref: {{canary}}
+exported: 2016-03-28T02:00:04Z
+queen: queen01
+epoch: 131
+nodes:
+  - {name: queen01,    host: queen01.hm.internal,    addr: 192.0.2.10,   runtime: 3.4.1, role: leader}
+  - {name: queen02,    host: queen02.hm.internal,    addr: 192.0.2.11,   runtime: 3.4.1, role: follower}
+  - {name: forager-01, host: forager-01.hm.internal, addr: 192.0.2.21,   runtime: 3.4.1, slots: 2, capabilities: [fetch, convert, index], state: ready, last_hb: 1459130398, load: 0.31, epoch_seen: 131}
+  - {name: forager-02, host: forager-02.hm.internal, addr: 192.0.2.22,   runtime: 3.4.1, slots: 2, capabilities: [fetch, convert, index], state: ready, last_hb: 1459130401, load: 0.44, epoch_seen: 131}
+  - {name: forager-03, host: forager-03.hm.internal, addr: 192.0.2.23,   runtime: 3.2.4, slots: 2, capabilities: [fetch, convert, index], state: ready, last_hb: 1459130397, load: 0.12, epoch_seen: 131}
+  - {name: forager-05, host: forager-05.hm.internal, addr: 192.0.2.25,   runtime: 3.4.1, slots: 1, capabilities: [convert], state: ready, last_hb: 1459130400, load: 0.88, epoch_seen: 131}
+  - {name: forager-07, host: forager-07.hm.internal, addr: 192.0.2.17,   runtime: 3.4.1, slots: 2, capabilities: [fetch, convert, index, model.shard0], state: ready, last_hb: 1459130402, load: 0.72, epoch_seen: 131}
+  - {name: forager-09, host: forager-09.hm.internal, addr: 192.0.2.19,   runtime: 3.4.1, slots: 2, capabilities: [fetch, index, model.shard1], state: ready, last_hb: 1459130399, load: 0.65, epoch_seen: 131}
+  - {name: forager-12, host: forager-12.hm.internal, addr: 192.0.2.32,   runtime: 3.4.1, slots: 2, capabilities: [fetch, index, model.shard2], state: draining, last_hb: 1459130391, load: 0.21, epoch_seen: 131}
+  - {name: forager-14, host: forager-14.hm.internal, addr: 192.0.2.34,   runtime: 3.4.0, slots: 2, capabilities: [fetch, index, model.shard3], state: ready, last_hb: 1459130400, load: 0.19, epoch_seen: 130}
+  - {name: forager-15, host: forager-15.hm.internal, addr: 192.0.2.35,   runtime: 3.4.1, slots: 4, capabilities: [index], state: ready, last_hb: 1459130402, load: 1.30, epoch_seen: 131}
+  - {name: forager-16, host: forager-16.hm.internal, addr: 192.0.2.36,   runtime: 3.4.1, slots: 4, capabilities: [index], state: ready, last_hb: 1459130401, load: 1.12, epoch_seen: 131}
+  - {name: forager-19, host: forager-19.hm.internal, addr: 198.51.100.7, runtime: 3.4.1, slots: 1, capabilities: [fetch, convert], state: ready, last_hb: 1459130380, load: 0.05, epoch_seen: 131}

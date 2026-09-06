@@ -1,0 +1,25 @@
+{
+  "id": "SGX-005",
+  "name": "link-depth",
+  "version": 1,
+  "status": "active",
+  "hypothesis": "A page five links deep is reached by a smaller, more persistent subset of visitors than the same page linked from the main page. Depth-first crawlers should be over-represented in the deep arm.",
+  "variable": "link_depth",
+  "scope": "targets",
+  "targets": ["Distributed_Inference_Notes/Appendix_C"],
+  "params": { "anchor_text": "Decision record: Cinder-XL (Appendix C)" },
+  "arms": [
+    { "id": "A", "label": "shallow (main page link)", "weight": 1, "value": "shallow", "note": "adds a 'Filed records' link on Main_Page; the deep path stays" },
+    { "id": "B", "label": "deep only", "weight": 1, "value": "deep", "note": "reachable only via the depth-5 chain" }
+  ],
+  "assignment": { "unit": "actor", "salt": "SGX-005-depth-2026-09" },
+  "outcomes": [
+    { "id": "reached", "metric": "page_reached", "page": "Distributed_Inference_Notes/Appendix_C" },
+    { "id": "time_to_reach", "metric": "seconds_to_page", "page": "Distributed_Inference_Notes/Appendix_C" },
+    { "id": "depth", "metric": "depth_reached" },
+    { "id": "classes", "metric": "class_mix" }
+  ],
+  "seed_version": "2026.09.0",
+  "created": "2026-09-05",
+  "owner": "sky"
+}

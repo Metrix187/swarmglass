@@ -1,0 +1,24 @@
+{
+  "id": "SGX-007",
+  "name": "representation-preference",
+  "version": 1,
+  "status": "active",
+  "hypothesis": "The order in which alternates are advertised (json first vs text first) changes which representation retrieval-oriented agents fetch.",
+  "variable": "representation",
+  "scope": "targets",
+  "targets": ["Tool_Registry"],
+  "arms": [
+    { "id": "A", "label": "html first (default)", "weight": 1, "value": "html" },
+    { "id": "B", "label": "json advertised first", "weight": 1, "value": "json" },
+    { "id": "C", "label": "text advertised first", "weight": 1, "value": "text" }
+  ],
+  "assignment": { "unit": "actor", "salt": "SGX-007-rep-2026-09" },
+  "outcomes": [
+    { "id": "alt", "metric": "alt_requested", "page": "Tool_Registry" },
+    { "id": "reached", "metric": "page_reached", "page": "Tool_Registry" },
+    { "id": "classes", "metric": "class_mix" }
+  ],
+  "seed_version": "2026.09.0",
+  "created": "2026-09-05",
+  "owner": "sky"
+}

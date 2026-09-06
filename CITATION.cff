@@ -1,0 +1,23 @@
+cff-version: 1.2.0
+title: "Swarmglass: passive observation of autonomous agents and crawler swarms on a fictional documentation site"
+message: "If you use Swarmglass or its published datasets, please cite the research release you used."
+type: software
+authors:
+  - name: "sky (@Metrix187)"
+    affiliation: "Quantara"
+repository-code: "https://github.com/Metrix187/swarmglass"
+url: "https://quantara.cv/projects/swarmglass/"
+license: "LicenseRef-WTFPUP-1.0"
+version: "0.1.0"
+date-released: "2026-09-05"
+keywords:
+  - web crawlers
+  - autonomous agents
+  - honeypot
+  - passive observation
+  - canary identifiers
+  - AI evaluation
+identifiers:
+  - type: other
+    value: "SGR-2026.09"
+    description: "research release"

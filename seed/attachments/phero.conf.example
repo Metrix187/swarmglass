@@ -1,0 +1,11 @@
+# phero broker example config. not linked from anywhere; the config reference
+# has the real one inline. archive ref: {{canary}}
+[phero]
+listen          = 0.0.0.0:7421
+data_dir        = /var/lib/phero
+trail_log_size  = 10000
+trail_log_bytes = 0
+stats_listen    = 127.0.0.1:7421
+# 2015-03: separate namespace for inference activations, see AF-70
+[phero.trail "infer.*"]
+trail_log_size  = 50

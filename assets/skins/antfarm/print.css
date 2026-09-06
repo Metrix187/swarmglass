@@ -1,0 +1,6 @@
+/* print stylesheet — mostly unchanged from monobook's */
+#column-one, #siteNotice, #jump-to-nav, .editsection, .toctoggle, #footer, #f-poweredbyico { display: none; }
+#content { margin: 0; border: none; padding: 0; }
+.printfooter { display: block; margin-top: 1em; font-size: 90%; }
+a { color: #000; text-decoration: none; }
+body { background: #fff; font-family: serif; }
