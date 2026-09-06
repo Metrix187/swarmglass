@@ -1,3 +1,5 @@
 * text=auto eol=lf
 seed/** text eol=lf
 assets/** -text
+# copies of quantara.cv files stay byte-for-byte (the site repo pins them -text too)
+quantara-site/site/** -text
