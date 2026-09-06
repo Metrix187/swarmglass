@@ -64,6 +64,8 @@ test('ua families are labels, not verdicts', () => {
   assert.equal(uaFamily('Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; GPTBot/1.4; +https://openai.com/gptbot)').family, 'gptbot');
   assert.equal(uaFamily('Mozilla/5.0 (compatible; ChatGPT-User/1.0; +https://openai.com/bot)').family, 'chatgpt-user');
   assert.equal(uaFamily('Mozilla/5.0 (compatible; Claude-User/1.0)').family, 'claude-user');
+  assert.equal(uaFamily('GoogleAgent-URLContext').family, 'google-agent');
+  assert.equal(familyCategory('google-agent'), 'ai_fetcher');
   assert.equal(familyCategory('gptbot'), 'ai_crawler');
   assert.equal(familyCategory('chatgpt-user'), 'ai_fetcher');
   assert.equal(familyCategory('nope'), 'other');

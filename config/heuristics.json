@@ -238,7 +238,8 @@
               "chatgpt-user",
               "claude-user",
               "perplexity-user",
-              "meta-fetcher"
+              "meta-fetcher",
+              "google-agent"
             ]
           },
           "weight": 1.5,
@@ -1950,7 +1951,8 @@
               "claude-user",
               "perplexity-user",
               "mistral",
-              "meta-fetcher"
+              "meta-fetcher",
+              "google-agent"
             ]
           },
           "weight": 1.5,

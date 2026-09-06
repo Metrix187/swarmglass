@@ -21,6 +21,7 @@ export const UA_RULES: UaRule[] = [
   { family: 'claude-user', re: /Claude-User/i, category: 'ai_fetcher' },
   { family: 'perplexity-user', re: /Perplexity-User/i, category: 'ai_fetcher' },
   { family: 'meta-fetcher', re: /meta-externalfetcher/i, category: 'ai_fetcher' },
+  { family: 'google-agent', re: /GoogleAgent-URLContext/i, category: 'ai_fetcher' }, // gemini's url context tool
   { family: 'gptbot', re: /GPTBot|OAI-SearchBot/i, category: 'ai_crawler' },
   { family: 'claudebot', re: /ClaudeBot|Claude-SearchBot|anthropic-ai/i, category: 'ai_crawler' },
   { family: 'perplexity', re: /PerplexityBot/i, category: 'ai_crawler' },

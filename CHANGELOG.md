@@ -37,7 +37,7 @@ The first real GPTBot crawl (382 requests, two-second beat, cookie returned, two
 - **retrieval_agent**: `alternates` needs `alt_share >= 0.1`; `ai_ua` now lists only the `*-User` fetchers; new `sweep` (-2 at 25+ unique pages).
 - **tool_discovery_agent**: new `blanket` (-1.5 at 25+ unique pages).
 - **unknown**: new `malformed_only`.
-- New feature `ua_category`; the `chatgpt-user`, `claude-user`, `perplexity-user`, `meta-fetcher` families were split from their vendors' crawlers, and `mistral` is an `ai_fetcher`.
+- New feature `ua_category`; the `chatgpt-user`, `claude-user`, `perplexity-user`, `meta-fetcher` families were split from their vendors' crawlers, and `mistral` is an `ai_fetcher`. `google-agent` (Gemini's `GoogleAgent-URLContext` fetcher) added the same evening after it turned up as `generic-bot`.
 - Re-validated on a snapshot of the live database before rescoring: all nine personas keep their designed class with wider margins (browser_human 0.42 → 0.57, aggressive_crawler 0.38 → 0.83, recursive_follower 0.58 → 0.83); GPTBot's two sessions go from human_browser 0.28 to naive_crawler 0.90 and 0.93; the three 118-requests-in-half-a-second sweeps go from a 0.34 tie with tool discovery to aggressive_crawler 0.81; the `/.env` scanner moves from naive_crawler to scripted_agent; the malformed-only artefact session drops from human_browser to unknown. Four flips in 51 sessions, all intended.
 
 ### still open (operator)
