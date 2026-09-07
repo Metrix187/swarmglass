@@ -4,6 +4,7 @@ export interface LiveEvent {
   session_id: string;
   method: string;
   path: string;
+  query: string | null; // compact k=v&k=v, already sanitised, display only
   status: number;
   latency_ms: number;
   kind: string;

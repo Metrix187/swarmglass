@@ -5,6 +5,7 @@ import { ipFields, sanitizeQuery, refererFields } from '../src/telemetry/privacy
 import { testConfig } from '../src/config.ts';
 import { loadHeuristics, score, evalCond, validateHeuristics } from '../src/telemetry/scoring.ts';
 import { computeFeatures, type EventRow, type SessionRow } from '../src/telemetry/features.ts';
+import { buildStory } from '../src/console/story.ts';
 import { describeCluster, type ClusterSession } from '../src/telemetry/cluster.ts';
 import { familyCategory, uaFamily } from '../src/telemetry/ua.ts';
 import { assertNoLeak, sanitizeSession } from '../src/publish/sanitize.ts';
@@ -166,4 +167,71 @@ test('public sanitiser drops identifying fields and refuses ip-shaped output', (
   assertNoLeak(JSON.stringify(pub));
   assert.throws(() => assertNoLeak('{"x":"198.51.100.7"}'));
   assert.throws(() => assertNoLeak('{"h":"authorization: Bearer x"}'));
+});
+
+test('features + story: walking a page\'s history is link-following, not looping', () => {
+  const h = loadHeuristics(join(process.cwd(), 'config', 'heuristics.json'));
+  validateHeuristics(h);
+  // one page, fetched plain once and then through forty ?oldid= links and ten ?diff= links, 2.5s apart.
+  // modelled on the mj12 crawl that scored looping 0.9 for never asking for the same url twice
+  const events: EventRow[] = [ev({ ts: 0, page_id: 'Bus', path: '/wiki/Bus' })];
+  for (let i = 1; i <= 40; i++) events.push(ev({ ts: i * 2500, page_id: 'Bus', path: '/wiki/Bus', query_json: JSON.stringify({ oldid: String(100 + i) }) }));
+  for (let i = 41; i <= 50; i++) events.push(ev({ ts: i * 2500, page_id: 'Bus', path: '/wiki/Bus', query_json: JSON.stringify({ diff: String(100 + i), oldid: String(99 + i) }) }));
+  const f = computeFeatures(session, events, pageInfo);
+  assert.equal(f.n_unique_pages, 1);
+  assert.equal(f.revisit_rate, 0, 'fifty different urls are not revisits');
+  assert.equal(f.loop_score, 0);
+  assert.equal(f.variant_fetches, 50);
+  assert.equal(f.query_usage, 50);
+  assert.equal(f.query_foreign, 0);
+  const s = score(h, f);
+  assert.ok(s.traits.looping!.value < 0.3, `looping ${s.traits.looping!.value}`);
+  assert.ok(s.class_evidence.search_bot!.some((e) => e.rule === 'history_walk'));
+  assert.ok(!s.class_evidence.scripted_agent!.some((e) => e.rule === 'query'), 'site-emitted keys are not "using query parameters"');
+  const story = buildStory(events, f, s, { uaFamily: 'mj12', cookieReturned: false, synthetic: false });
+  assert.ok(!story.steps.some((st) => st.flags.includes('revisit')));
+  assert.equal(story.steps[1]!.query, 'oldid=101');
+  assert.ok(story.steps[1]!.notes.includes('old revision 101 of Bus'), story.steps[1]!.notes.join(' | '));
+  assert.ok(story.steps[41]!.notes.includes('diff 141 against 140 of Bus'), story.steps[41]!.notes.join(' | '));
+  assert.ok(story.summary.includes('1 distinct page'), story.summary);
+  assert.ok(story.summary.includes('walked 50 revision/diff/edit links'), story.summary);
+});
+
+test('features + story: the same url over and over is still a loop', () => {
+  const events: EventRow[] = [];
+  for (let i = 0; i < 20; i++) events.push(ev({ ts: i * 1000, page_id: 'Bus', path: '/wiki/Bus' }));
+  const f = computeFeatures(session, events, pageInfo);
+  assert.ok((f.revisit_rate as number) > 0.9);
+  assert.ok((f.loop_score as number) > 0.9);
+  assert.equal(f.variant_fetches, 0);
+  const story = buildStory(events, f, null, { uaFamily: 'curl', cookieReturned: false, synthetic: false });
+  assert.ok(story.steps[19]!.notes.includes('revisit of Bus (visit 20)'));
+});
+
+test('features + story: query keys the site never emits are foreign, and the summary counts pages the way the facts card does', () => {
+  const events: EventRow[] = [
+    ev({ ts: 0 }),
+    ev({ ts: 1000, path: '/wiki/X', query_json: JSON.stringify({ id: '1' }) }),
+    ev({ ts: 2000, path: '/wiki/X', query_json: JSON.stringify({ action: 'history' }) }),
+    // the skin's cache-busting hash on its own stylesheet is not the visitor's idea
+    ev({ ts: 2500, path: '/skins/antfarm/main.css', page_id: null, resource_kind: 'asset', query_json: JSON.stringify({ fbde4c: '' }) }),
+    // a redirect alias has a page id but is not a page you reached; features skip it and the summary must too
+    ev({ ts: 3000, path: '/wiki/Old_Name', page_id: 'Old_Name', resource_kind: 'redirect', status: 301 }),
+    ev({ ts: 4000, path: '/wiki/Hidden', page_id: 'Hidden', discover_class: 'obscure' }),
+    ev({ ts: 5000, path: '/wiki/Hidden', page_id: 'Hidden', discover_class: 'obscure' }),
+  ];
+  const f = computeFeatures(session, events, pageInfo);
+  assert.equal(f.query_usage, 3);
+  assert.equal(f.query_foreign, 1, 'the asset cache-buster is not foreign');
+  assert.equal(f.variant_fetches, 1);
+  assert.equal(f.n_unique_pages, 2);
+  assert.equal(f.hidden_hits, 2);
+  assert.equal(f.hidden_pages, 1);
+  const story = buildStory(events, f, null, { uaFamily: 'curl', cookieReturned: false, synthetic: false });
+  assert.ok(story.steps[1]!.notes.some((n) => n.includes('never emits: ?id=1')), story.steps[1]!.notes.join(' | '));
+  assert.ok(story.steps[2]!.notes.includes('revision history of X'));
+  const hiddenStep = story.steps.find((st) => st.path === '/wiki/Hidden')!;
+  assert.ok(hiddenStep.notes.some((n) => n.startsWith('reached an obscure page')), hiddenStep.notes.join(' | '));
+  assert.ok(story.summary.includes('2 distinct pages'), story.summary);
+  assert.ok(story.summary.includes('reached 1 hidden page (2 requests)'), story.summary);
 });

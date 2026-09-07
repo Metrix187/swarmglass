@@ -99,7 +99,9 @@ pre { background: var(--paper-2); border: 1px solid var(--hair); border-radius: 
 .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: middle; }
 .two { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 @media (max-width: 900px) { .two { grid-template-columns: 1fr; } }
-.live-row { display: grid; grid-template-columns: 90px 60px 40px 1fr 110px 90px; gap: 8px; font-family: var(--mono); font-size: 11.5px; padding: 3px 4px; border-bottom: 1px dotted var(--hair); }
+.live-row { display: grid; grid-template-columns: 90px 60px 40px 1fr 120px 130px; gap: 8px; font-family: var(--mono); font-size: 11.5px; padding: 3px 4px; border-bottom: 1px dotted var(--hair); }
+.live-row .mono { overflow-wrap: anywhere; }
+.q { color: var(--soft); }
 .live-row.new { background: #FDF3F7; }
 .live-row.synthetic { opacity: .55; }
 .hint { font-size: 11.5px; color: var(--soft); }

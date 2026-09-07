@@ -6,6 +6,7 @@ import { entropy, jaccard, ngrams, scrub } from '../src/util/text.ts';
 import { fnv1a, seededRandom, safeEqual } from '../src/util/hash.ts';
 import { normalizePath, resolveClientIp } from '../src/http/server.ts';
 import { malformationFlags } from '../src/http/security.ts';
+import { fmtDuration } from '../src/util/time.ts';
 
 test('ip truncation keeps the prefix only', () => {
   assert.equal(truncateIp('203.0.113.77'), '203.0.113.0/24');
@@ -74,4 +75,12 @@ test('hash helpers', () => {
   assert.ok(safeEqual('a', 'a'));
   assert.ok(!safeEqual('a', 'b'));
   assert.ok(!safeEqual('a', 'ab'));
+});
+
+test('fmtDuration carries seconds into minutes instead of printing 3m 60s', () => {
+  assert.equal(fmtDuration(239_600), '4m 0s');
+  assert.equal(fmtDuration(150_000), '2m 30s');
+  assert.equal(fmtDuration(59_990), '1m 0s');
+  assert.equal(fmtDuration(3_599_600), '1h 0m');
+  assert.equal(fmtDuration(2_500), '2.5s');
 });

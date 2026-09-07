@@ -9,6 +9,7 @@ import { scrub } from '../util/text.ts';
 import { acceptProfile } from '../http/negotiate.ts';
 import { malformationFlags } from '../http/security.ts';
 import { extraHeaderFields, refererFields, sanitizeQuery } from './privacy.ts';
+import { compactQuery } from './query.ts';
 import { SessionStore, MAX_SEQ, type SessionState } from './session.ts';
 import { sessionLoader } from './hydrate.ts';
 import { CanaryService, type Canary, type Sighting } from './canary.ts';
@@ -220,6 +221,8 @@ export class Telemetry {
     // ---- persist ----
     const sessionSnapshot = isNew || !s.persisted ? snapshotForInsert(s) : null;
     if (sessionSnapshot) s.persisted = true;
+    const sanitizedQuery = sanitizeQuery(req.query, this.cfg);
+    const hasQuery = Boolean(sanitizedQuery && Object.keys(sanitizedQuery).length);
     const row = {
       ts: at,
       session_id: s.id,
@@ -243,10 +246,7 @@ export class Telemetry {
       accept_enc: req.headers['accept-encoding'] ? scrub(req.headers['accept-encoding'], 128) : null,
       referer: ref.referer,
       referer_internal: ref.internal,
-      query_json: (() => {
-        const q = sanitizeQuery(req.query, this.cfg);
-        return q && Object.keys(q).length ? JSON.stringify(q) : null;
-      })(),
+      query_json: hasQuery ? JSON.stringify(sanitizedQuery) : null,
       header_names: req.rawHeaderNames.slice(0, 64).join(','),
       header_order_hash: shortHash(req.rawHeaderNames.join(','), 12),
       header_count: req.headerCount,
@@ -327,6 +327,7 @@ export class Telemetry {
       session_id: s.id,
       method: row.method,
       path: row.path,
+      query: hasQuery && sanitizedQuery ? compactQuery(sanitizedQuery) : null,
       status: res.status,
       latency_ms: row.latency_ms,
       kind,

@@ -1,6 +1,7 @@
 import { entropy, jaccard, ngrams } from '../util/text.ts';
 import { mean, median, percentile, stddev } from '../util/time.ts';
 import { familyCategory } from './ua.ts';
+import { canonicalQuery, isFurniture, parseQuery } from './query.ts';
 
 // everything the scoring model sees. computed from persisted event rows only,
 // so `npm run rescore` reproduces exactly what the live path produced.
@@ -113,7 +114,19 @@ export function computeFeatures(session: SessionRow, events: EventRow[], pageInf
   const pageSeq = pageEvents.map((e) => e.page_id as string);
   const unique = new Set(pageSeq);
   f.n_unique_pages = unique.size;
-  f.revisit_rate = pageSeq.length ? (pageSeq.length - unique.size) / pageSeq.length : 0;
+  // a revisit is the same *url*. ?oldid=12 and ?oldid=13 are two different things to fetch, and a crawler
+  // walking a page's history was scoring "95% revisits" for never asking for the same thing twice
+  const pageQueries = pageEvents.map((e) => parseQuery(e.query_json));
+  const urlSeq = pageEvents.map((e, i) => {
+    const q = pageQueries[i];
+    return (e.page_id as string) + (q ? '?' + canonicalQuery(q) : '');
+  });
+  f.revisit_rate = urlSeq.length ? (urlSeq.length - new Set(urlSeq).size) / urlSeq.length : 0;
+  // query variants the site itself links to (history, diffs, edit/info views, printable). following those is
+  // link-following, not "using query parameters", so they get their own counter
+  const variantFetches = pageQueries.filter((q) => q !== null && isFurniture(q)).length;
+  f.variant_fetches = variantFetches;
+  f.variant_share = pageEvents.length ? variantFetches / pageEvents.length : 0;
   const depths = pageEvents.map((e) => e.depth).filter((d): d is number => typeof d === 'number');
   f.max_depth = depths.length ? Math.max(...depths) : 0;
   f.mean_depth = depths.length ? mean(depths) : 0;
@@ -161,6 +174,7 @@ export function computeFeatures(session: SessionRow, events: EventRow[], pageInf
     hiddenHits += c;
   }
   f.hidden_hits = hiddenHits;
+  f.hidden_pages = new Set(pageEvents.filter((e) => hidden.includes(e.discover_class ?? 'visible')).map((e) => e.page_id as string)).size;
   f.hidden_share = pageEvents.length ? hiddenHits / pageEvents.length : 0;
   f.reach_orphan = classes.get('orphan') ?? 0;
 
@@ -194,6 +208,14 @@ export function computeFeatures(session: SessionRow, events: EventRow[], pageInf
   f.internal_referer_share = pageEvents.length ? pageEvents.filter((e) => e.referer_internal).length / pageEvents.length : 0;
   f.cookie_present_share = n ? ev.filter((e) => e.cookie_present).length / n : 0;
   f.query_usage = ev.filter((e) => e.query_json).length;
+  // keys the mirror never emits are the visitor's own idea. that's the probing signal; the rest is furniture.
+  // assets are skipped: the skin links its css/js with a cache-busting ?<hash>, and a browser fetching those
+  // is doing exactly what the page told it to
+  f.query_foreign = ev.filter((e) => {
+    if (e.resource_kind === 'asset') return false;
+    const q = parseQuery(e.query_json);
+    return q !== null && !isFurniture(q);
+  }).length;
 
   // ---- canaries ----
   let exposed = 0;
@@ -230,7 +252,11 @@ export function computeFeatures(session: SessionRow, events: EventRow[], pageInf
   f.canary_cross_actor = sightingsCrossActor;
 
   // ---- looping / motifs ----
-  const seqIds = ev.map((e) => e.page_id ?? `${e.resource_kind}:${e.path}`);
+  // full url here too, or a history walk reads as one trigram repeated seventy times
+  const seqIds = ev.map((e) => {
+    const q = parseQuery(e.query_json);
+    return (e.page_id ?? `${e.resource_kind}:${e.path}`) + (q ? '?' + canonicalQuery(q) : '');
+  });
   const tri = ngrams(seqIds, 3);
   const triCounts = new Map<string, number>();
   for (const t of tri) triCounts.set(t, (triCounts.get(t) ?? 0) + 1);

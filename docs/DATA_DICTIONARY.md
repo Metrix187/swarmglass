@@ -28,7 +28,9 @@ Computed by `computeFeatures()` in `src/telemetry/features.ts` from the session'
 
 | feature | meaning |
 |---|---|
-| `n_unique_pages`, `revisit_rate` | distinct pages; (page requests − distinct)/page requests |
+| `n_unique_pages` | distinct pages, by page id (query string ignored) |
+| `revisit_rate` | (page requests − distinct urls)/page requests. a url is page id + query string, so walking `?oldid=` history is not revisiting |
+| `variant_fetches`, `variant_share` | page requests whose query keys are all ones the wiki itself emits (`action`, `oldid`, `diff`, `section`, `printable`, `redirect`, `returnto`, `namespace`, `page`, `search`, `q`, `fulltext`): history walks, diffs, edit views; and their share of page requests |
 | `max_depth`, `mean_depth` | link depth of pages fetched |
 | `bfs_score` | 1 − (depth decreases between consecutive first discoveries)/(discoveries − 1); 0.5 when < 3 pages |
 | `dive_ratio` | max depth / distinct pages |
@@ -37,12 +39,12 @@ Computed by `computeFeatures()` in `src/telemetry/features.ts` from the session'
 | `kind_entropy` | same over resource kinds |
 | `alpha_order` | share of consecutive first discoveries in alphabetical order (index iteration) |
 | `reach_<class>` | count of pages fetched per discoverability class (`reach_robots_only`, `reach_orphan`, …) |
-| `hidden_hits`, `hidden_share` | pages not in the `visible` class |
+| `hidden_hits`, `hidden_pages`, `hidden_share` | requests for pages outside the `visible` class; distinct such pages; share of page requests |
 | `topic_coherence` | mean category Jaccard between consecutive pages |
 | `manifest_hit`, `manifest_rank` | fetched a manifest/api/Tool_Registry; position of the first such fetch as a fraction of the session |
 | `tool_pages` | fetches of agent/tool-themed pages |
 | `redirects_hit`, `redirect_follow_rate` | 3xx responses and how many were followed within 5 s |
-| `loop_score`, `repeat_max` | share of request trigrams that repeat; largest repeat count |
+| `loop_score`, `repeat_max` | share of request trigrams (full url, query included) that repeat; largest repeat count |
 | `n_404_repeat` | re-requests of paths that already 404'd |
 
 ### timing
@@ -69,7 +71,7 @@ Computed by `computeFeatures()` in `src/telemetry/features.ts` from the session'
 | `accept_html_share`, `accept_json_share`, `accept_any_share` | what `Accept` asked for |
 | `negotiated_nonhtml` | responses served as non-html by negotiation |
 | `internal_referer_share` | page requests carrying a same-site referer |
-| `query_usage` | requests with query parameters |
+| `query_usage`, `query_foreign` | requests with any query parameters; non-asset requests carrying a key the site never emits (the visitor's own idea; the skin's `?<hash>` on css/js is excluded) |
 
 ### canaries
 

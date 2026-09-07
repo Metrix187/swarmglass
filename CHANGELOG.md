@@ -48,6 +48,25 @@ The first real GPTBot crawl (382 requests, two-second beat, cookie returned, two
 - New feature `ua_category`; the `chatgpt-user`, `claude-user`, `perplexity-user`, `meta-fetcher` families were split from their vendors' crawlers, and `mistral` is an `ai_fetcher`. `google-agent` (Gemini's `GoogleAgent-URLContext` fetcher) added the same evening after it turned up as `generic-bot`.
 - Re-validated on a snapshot of the live database before rescoring: all nine personas keep their designed class with wider margins (browser_human 0.42 → 0.57, aggressive_crawler 0.38 → 0.83, recursive_follower 0.58 → 0.83); GPTBot's two sessions go from human_browser 0.28 to naive_crawler 0.90 and 0.93; the three 118-requests-in-half-a-second sweeps go from a 0.34 tie with tool discovery to aggressive_crawler 0.81; the `/.env` scanner moves from naive_crawler to scripted_agent; the malformed-only artefact session drops from human_browser to unknown. Four flips in 51 sessions, all intended.
 
+### fixed 2026-09-06 (later the same evening)
+
+- console: live rows were off by one column. The time and method were bare text nodes, which CSS grid folds into a single cell, so the path sat in the 40px status slot with the session link painted over it. Every cell is a span now.
+- console: the live view ignored the traffic filter; with "real only" selected it still showed synthetic rows, dimmed. It filters client-side now and the hint says what it's showing. Initial tail is the full 200 the hint promised, and the dedupe set stops growing once it passes a thousand keys.
+- console: query strings are shown next to the path in live rows and story steps. Nothing in the console rendered them before, so a crawler walking `?oldid=` history read as one bot hammering one page.
+- console: `fmtRel` / `fmtDuration` rounded the seconds remainder on its own and printed `3m60s`; whole seconds are rounded first now.
+- story: the summary's "distinct pages" counted redirect aliases and disagreed with the facts card beside it; both use the same page-kind filter now. "reached N hidden pages" was a request count and now names distinct pages, with the request count in brackets when they differ. "a obscure page" gets its article.
+
+### heuristics v3 — 2026-09-06
+
+An MJ12bot crawl (242 requests, 236 with a query string) walked the `?oldid=` / `?diff=` / `?action=` links the mirror emits on every page and scored `looping` 0.90 and `revisitation` 0.80 for never fetching the same url twice; the story view called all 236 of them revisits. The class still came out `search_bot`, but the evidence was wrong about what it saw, and the `scripted_agent` `query` rule was giving crawlers points for following our own links. Changes:
+
+- `revisit_rate` and `loop_score` key on page id + query string, so a history walk is not a revisit and a real loop still is.
+- New features `variant_fetches` / `variant_share` (page requests whose query keys are all ones the site emits: `action`, `oldid`, `diff`, `section`, `printable`, `redirect`, `returnto`, `namespace`, `page`, `search`, `q`, `fulltext`), `query_foreign` (requests carrying any other key), `hidden_pages` (distinct hidden pages, alongside the `hidden_hits` request count). Helper in `src/telemetry/query.ts`.
+- **scripted_agent**: `query` now needs `query_foreign >= 2`.
+- **search_bot**, **naive_crawler**: new `history_walk` (+0.8 at ten or more variant fetches making up 30%+ of page requests; a person clicking a few history links stays under it).
+- **curiosity**: `history_walk` (+0.15).
+- Story steps say what a variant asked for ("old revision 4102 of Worker_Node_Registry", "diff 4111 against 4110", "edit view (section 3)") and flag query keys the site never emits. Run `npm run rescore` after deploying; the nine synthetic personas keep their designed classes.
+
 ### still open (operator)
 
 - `remote_ip` allowlist on the console's Caddy block once the research networks are known.

@@ -192,7 +192,7 @@ export function buildConsoleRouter(deps: ConsoleDeps): Router {
   const range = (rq: Req) => q.parseRange(rq.query.get('range'));
 
   r.get('/api/overview', (req) => requireAuth(req, (rq) => j(200, q.overview(qd, range(rq), synth(rq)))), 'overview');
-  r.get('/api/live/tail', (req) => requireAuth(req, () => j(200, { events: deps.telemetry.bus.tail(100) })), 'live_tail');
+  r.get('/api/live/tail', (req) => requireAuth(req, () => j(200, { events: deps.telemetry.bus.tail(200) })), 'live_tail');
   r.get('/api/sessions', (req) => requireAuth(req, (rq) => {
     const sort = rq.query.get('sort') ?? 'recent';
     return j(200, q.listSessions(qd, {

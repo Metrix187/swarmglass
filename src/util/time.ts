@@ -10,9 +10,11 @@ export function dayKey(ms: number): string {
 
 export function fmtDuration(ms: number): string {
   if (ms < 1000) return `${Math.round(ms)}ms`;
-  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
-  if (ms < 3_600_000) return `${Math.floor(ms / 60_000)}m ${Math.round((ms % 60_000) / 1000)}s`;
-  return `${Math.floor(ms / 3_600_000)}h ${Math.floor((ms % 3_600_000) / 60_000)}m`;
+  if (ms < 59_950) return `${(ms / 1000).toFixed(1)}s`;
+  // whole seconds first, then split. rounding the remainder on its own gave "3m 60s"
+  const s = Math.round(ms / 1000);
+  if (s < 3600) return `${Math.floor(s / 60)}m ${s % 60}s`;
+  return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
 }
 
 // old-wiki style timestamp: "14:03, 2 August 2013"

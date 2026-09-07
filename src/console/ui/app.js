@@ -29,7 +29,8 @@
     return ct.includes('json') ? r.json() : r.text();
   }
   const fmtTs = (ms) => new Date(ms).toISOString().replace('T', ' ').slice(0, 19);
-  const fmtRel = (ms) => ms < 1000 ? `${Math.round(ms)}ms` : ms < 60000 ? `${(ms / 1000).toFixed(1)}s` : ms < 3600000 ? `${Math.floor(ms / 60000)}m${Math.round((ms % 60000) / 1000)}s` : `${Math.floor(ms / 3600000)}h${Math.floor((ms % 3600000) / 60000)}m`;
+  // whole seconds first, then split. rounding the remainder on its own printed "3m60s"
+  const fmtRel = (ms) => { if (ms < 1000) return `${Math.round(ms)}ms`; if (ms < 59950) return `${(ms / 1000).toFixed(1)}s`; const s = Math.round(ms / 1000); return s < 3600 ? `${Math.floor(s / 60)}m${s % 60}s` : `${Math.floor(s / 3600)}h${Math.floor((s % 3600) / 60)}m`; };
   const pct = (x) => x === null || x === undefined ? '—' : `${Math.round(x * 100)}%`;
   const num = (x) => (x === null || x === undefined) ? '—' : typeof x === 'number' ? (Number.isInteger(x) ? x.toLocaleString() : x.toFixed(2)) : String(x);
   function tag(text, cls) { return h('span', { class: 'tag ' + (cls || '') }, text); }
@@ -149,23 +150,38 @@
   function withSpan(el, cls) { el.classList.add(cls); return el; }
 
   views.live = async (root) => {
-    root.append(h('h1', null, 'live'), h('p', { class: 'hint' }, 'last 200 events, polled every 2s. synthetic rows are dimmed.'));
+    const hint = state.synthetic === 'real' ? 'real traffic only, per the filter above' : state.synthetic === 'synthetic' ? 'synthetic traffic only, per the filter above' : 'all traffic; synthetic rows are dimmed';
+    root.append(h('h1', null, 'live'), h('p', { class: 'hint' }, `last 200 events, polled every 2s. ${hint}.`));
     const list = h('div');
     root.appendChild(list);
     let since = 0;
     const seen = new Set();
+    // the live endpoints don't take the traffic filter, so honour it here
+    const wanted = (e) => state.synthetic === 'all' || Boolean(e.synthetic) === (state.synthetic === 'synthetic');
     async function tick() {
       if (!document.body.contains(list)) return;
       try {
         const d = await api(`/api/live/${since ? 'poll?since=' + since : 'tail'}`);
         for (const e of d.events) {
-          const key = e.ts + e.session_id + e.path;
+          const key = e.ts + e.session_id + e.path + (e.query || '');
+          since = Math.max(since, e.ts);
           if (seen.has(key)) continue;
           seen.add(key);
-          since = Math.max(since, e.ts);
-          list.prepend(h('div', { class: 'live-row' + (e.is_new_session ? ' new' : '') + (e.synthetic ? ' synthetic' : '') }, fmtTs(e.ts).slice(11), e.method, h('span', { class: `st s${String(e.status)[0]}` }, e.status), h('span', { class: 'mono' }, e.path), h('span', null, sid(e.session_id), ' ', e.is_new_session ? tag('new', 'rose') : ''), h('span', null, tag(e.ua_family), e.canaries_seen ? tag(`${e.canaries_seen} canary`, 'lilac') : '')));
+          if (!wanted(e)) continue;
+          // every cell gets its own span. two bare strings side by side collapse into one grid cell and
+          // everything after them slides a column left. the path was landing underneath the session link
+          list.prepend(h('div', { class: 'live-row' + (e.is_new_session ? ' new' : '') + (e.synthetic ? ' synthetic' : ''), 'data-key': key },
+            h('span', { class: 'muted' }, fmtTs(e.ts).slice(11)),
+            h('span', null, e.method),
+            h('span', { class: `st s${String(e.status)[0]}` }, e.status),
+            h('span', { class: 'mono' }, e.path, e.query ? h('span', { class: 'q' }, '?' + e.query) : null),
+            h('span', null, sid(e.session_id), ' ', e.is_new_session ? tag('new', 'rose') : ''),
+            h('span', null, tag(e.ua_family), e.canaries_seen ? tag(`${e.canaries_seen} canary`, 'lilac') : '')));
           while (list.children.length > 200) list.lastChild.remove();
         }
+        // the poll only returns things newer than `since`, so the set only has to cover what's on screen.
+        // left alone it grows by one string per event for as long as the tab stays open
+        if (seen.size > 1000) { seen.clear(); for (const row of list.children) seen.add(row.dataset.key); }
       } catch (err) { /* keep polling */ }
       setTimeout(tick, 2000);
     }
@@ -236,7 +252,7 @@
     // story timeline
     const tl = h('div', { class: 'timeline' });
     for (const step of st.steps) {
-      tl.appendChild(h('div', { class: 'step ' + step.flags.join(' ') }, h('span', { class: 'n' }, step.n), h('span', { class: 't' }, fmtRel(step.rel_ms)), h('span', { class: 'gap' }, step.gap_ms === null ? '' : '+' + fmtRel(step.gap_ms)), h('span', { class: `st s${String(step.status)[0]}` }, step.status), h('div', null, h('span', { class: 'path' }, `${step.method} ${step.path}`), ' ', step.kind !== 'page' ? tag(step.kind) : null, step.negotiated && step.negotiated !== 'html' ? tag(step.negotiated, 'lilac') : null, step.discover && step.discover !== 'visible' ? tag(step.discover, 'rose') : null, step.notes.length ? h('ul', { class: 'notes' }, step.notes.map((n) => h('li', null, n))) : null)));
+      tl.appendChild(h('div', { class: 'step ' + step.flags.join(' ') }, h('span', { class: 'n' }, step.n), h('span', { class: 't' }, fmtRel(step.rel_ms)), h('span', { class: 'gap' }, step.gap_ms === null ? '' : '+' + fmtRel(step.gap_ms)), h('span', { class: `st s${String(step.status)[0]}` }, step.status), h('div', null, h('span', { class: 'path' }, `${step.method} ${step.path}`, step.query ? h('span', { class: 'q' }, '?' + step.query) : null), ' ', step.kind !== 'page' ? tag(step.kind) : null, step.negotiated && step.negotiated !== 'html' ? tag(step.negotiated, 'lilac') : null, step.discover && step.discover !== 'visible' ? tag(step.discover, 'rose') : null, step.notes.length ? h('ul', { class: 'notes' }, step.notes.map((n) => h('li', null, n))) : null)));
     }
     grid.appendChild(withSpan(card('story view — every request, with what it tells us', tl), 'span12'));
     grid.appendChild(withSpan(card('raw features', h('pre', null, JSON.stringify(s.features, null, 2))), 'span12'));

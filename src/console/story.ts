@@ -1,6 +1,7 @@
 import type { EventRow, Features } from '../telemetry/features.ts';
 import type { Scores } from '../telemetry/scoring.ts';
 import { fmtDuration } from '../util/time.ts';
+import { canonicalQuery, compactQuery, isFurniture, parseQuery, type Query } from '../telemetry/query.ts';
 
 // turns a session's event list into a step-by-step account with observations.
 // the wording is careful: it says what the requests did, never who sent them.
@@ -12,6 +13,7 @@ export interface StoryStep {
   gap_ms: number | null;
   method: string;
   path: string;
+  query: string | null; // compact, sanitised, for display next to the path
   status: number;
   kind: string;
   page_id: string | null;
@@ -38,6 +40,7 @@ export function buildStory(events: EventRow[], features: Features | null, scores
   const steps: StoryStep[] = [];
   const start = ev[0]?.ts ?? 0;
   const seenPages = new Map<string, number>();
+  const seenUrls = new Map<string, number>();
   const exposedAt = new Map<string, { n: number; where: string }>();
   let robotsAt: number | null = null;
   let sitemapAt: number | null = null;
@@ -78,18 +81,37 @@ export function buildStory(events: EventRow[], features: Features | null, scores
       flags.push('disallowed');
       notes.push(robotsAt !== null ? `path is disallowed by robots.txt, which was read at step ${robotsAt}` : 'path is disallowed by robots.txt (robots.txt was never fetched)');
     }
+    const q = parseQuery(e.query_json);
+    const qShown = q ? compactQuery(q) : null;
     if (e.page_id && e.status < 400 && (e.resource_kind === 'page' || e.resource_kind === 'alt' || e.resource_kind === 'attachment' || e.resource_kind === 'special')) {
-      const count = (seenPages.get(e.page_id) ?? 0) + 1;
-      seenPages.set(e.page_id, count);
-      if (count > 1) {
+      const pageCount = (seenPages.get(e.page_id) ?? 0) + 1;
+      seenPages.set(e.page_id, pageCount);
+      const url = e.page_id + (q ? '?' + canonicalQuery(q) : '');
+      const urlCount = (seenUrls.get(url) ?? 0) + 1;
+      seenUrls.set(url, urlCount);
+      if (urlCount > 1) {
+        // the same url again. ?oldid=12 after ?oldid=11 is not this, that's the variant note below
         flags.push('revisit');
-        notes.push(`revisit of ${e.page_id} (visit ${count})`);
-      } else if (e.discover_class && e.discover_class !== 'visible') {
+        notes.push(`revisit of ${e.page_id}${qShown ? '?' + qShown : ''} (visit ${urlCount})`);
+      } else if (q && isFurniture(q)) {
+        const what = describeVariant(e.page_id, q);
+        if (what) {
+          flags.push('variant');
+          notes.push(what);
+        }
+      }
+      if (pageCount === 1 && e.discover_class && e.discover_class !== 'visible') {
         flags.push('hidden');
         const via = channelNote(e.discover_class, { robotsAt, sitemapAt, feedAt, manifestAt, n });
-        notes.push(`reached a ${e.discover_class.replace(/_/g, ' ')} page${via}`);
+        const cls = e.discover_class.replace(/_/g, ' ');
+        notes.push(`reached ${/^[aeiou]/.test(cls) ? 'an' : 'a'} ${cls} page${via}`);
       }
-      if (typeof e.depth === 'number' && e.depth >= 4 && count === 1) notes.push(`depth ${e.depth} — this is deep`);
+      if (typeof e.depth === 'number' && e.depth >= 4 && pageCount === 1) notes.push(`depth ${e.depth} — this is deep`);
+    }
+    // assets carry the skin's own cache-busting ?<hash>, so they don't count
+    if (q && !isFurniture(q) && e.resource_kind !== 'asset') {
+      flags.push('foreign');
+      notes.push(`query parameters the site never emits: ?${qShown}`);
     }
     if (e.negotiated && e.negotiated !== 'html') {
       flags.push('alt');
@@ -157,16 +179,9 @@ export function buildStory(events: EventRow[], features: Features | null, scores
     if (gap !== null && gap < 50 && i > 0) flags.push('burst');
     if (gap !== null && gap > 120_000) notes.push(`${fmtDuration(gap)} pause before this request`);
     if (e.resource_kind === 'asset' && i > 0 && !steps.some((s) => s.kind === 'asset')) notes.push('fetched a page asset (stylesheet/script/favicon) — rendering-browser behaviour');
-    if (e.query_json && e.resource_kind === 'special' && e.page_id === 'Special:Search') {
-      try {
-        const q = JSON.parse(e.query_json) as Record<string, string>;
-        if (q.search) notes.push(`searched for “${q.search}”`);
-      } catch {
-        // ignore
-      }
-    }
+    if (q && e.resource_kind === 'special' && e.page_id === 'Special:Search' && q.search) notes.push(`searched for “${q.search}”`);
 
-    steps.push({ n, ts: e.ts, rel_ms: e.ts - start, gap_ms: gap, method: e.method, path: e.path, status: e.status, kind: e.resource_kind, page_id: e.page_id, discover: e.discover_class, depth: e.depth, negotiated: e.negotiated, notes, flags });
+    steps.push({ n, ts: e.ts, rel_ms: e.ts - start, gap_ms: gap, method: e.method, path: e.path, query: qShown, status: e.status, kind: e.resource_kind, page_id: e.page_id, discover: e.discover_class, depth: e.depth, negotiated: e.negotiated, notes, flags });
   });
 
   // burst annotation after the fact
@@ -205,10 +220,29 @@ function channelNote(cls: string, s: { robotsAt: number | null; sitemapAt: numbe
   return '';
 }
 
+// what a site-emitted query string actually asked for, in words. null when there's nothing worth saying
+// (search terms get their own note further down)
+function describeVariant(page: string, q: Query): string | null {
+  if (q.diff) return `diff ${q.diff}${q.oldid ? ` against ${q.oldid}` : ''} of ${page}`;
+  if (q.oldid) return `old revision ${q.oldid} of ${page}`;
+  if (q.action === 'history') return `revision history of ${page}`;
+  if (q.action === 'edit') return `edit view of ${page}${q.section ? ` (section ${q.section})` : ''}`;
+  if (q.action === 'info') return `info page for ${page}`;
+  if (q.action === 'raw') return `raw wikitext of ${page}`;
+  if (q.action) return `${q.action} view of ${page}`;
+  if (q.printable) return `printable view of ${page}`;
+  if (q.redirect === 'no') return `${page} without following its redirect`;
+  if (q.search !== undefined || q.q !== undefined) return null;
+  return `${page} with ?${compactQuery(q)}`;
+}
+
+// same filter as features.ts, so the summary's page count matches the facts card beside it
+const PAGE_KINDS = new Set(['page', 'special', 'alt', 'attachment']);
+
 function summarize(ev: EventRow[], f: Features | null, s: Scores | null, opts: { uaFamily: string; cookieReturned: boolean; synthetic: boolean }): string {
   if (!ev.length) return 'No requests recorded.';
   const dur = (ev[ev.length - 1] as EventRow).ts - (ev[0] as EventRow).ts;
-  const pages = new Set(ev.filter((e) => e.page_id && e.status < 400).map((e) => e.page_id));
+  const pages = new Set(ev.filter((e) => e.page_id && e.status < 400 && PAGE_KINDS.has(e.resource_kind)).map((e) => e.page_id));
   const parts: string[] = [];
   parts.push(`${ev.length} request${ev.length === 1 ? '' : 's'} over ${fmtDuration(dur)}, ${pages.size} distinct page${pages.size === 1 ? '' : 's'}.`);
   parts.push(`Declared user-agent family: ${opts.uaFamily} (self-reported).`);
@@ -221,8 +255,13 @@ function summarize(ev: EventRow[], f: Features | null, s: Scores | null, opts: {
     bits.push(opts.cookieReturned ? 'returned the session cookie' : 'never returned the session cookie');
     if (typeof f.max_depth === 'number') bits.push(`max depth ${f.max_depth}`);
     if (typeof f.bfs_score === 'number' && typeof f.n_unique_pages === 'number' && f.n_unique_pages >= 6) bits.push(f.bfs_score >= 0.7 ? 'breadth-first order' : f.bfs_score < 0.5 ? 'depth-first order' : 'mixed traversal order');
-    if (typeof f.hidden_hits === 'number' && f.hidden_hits > 0) bits.push(`reached ${f.hidden_hits} hidden page${f.hidden_hits === 1 ? '' : 's'}`);
+    if (typeof f.hidden_hits === 'number' && f.hidden_hits > 0) {
+      // hidden_hits is requests; the number of *pages* is what the sentence claims
+      const hp = typeof f.hidden_pages === 'number' ? f.hidden_pages : f.hidden_hits;
+      bits.push(`reached ${hp} hidden page${hp === 1 ? '' : 's'}${f.hidden_hits > hp ? ` (${f.hidden_hits} requests)` : ''}`);
+    }
     if (typeof f.n_alt === 'number' && f.n_alt > 0) bits.push(`${f.n_alt} alternate representation${f.n_alt === 1 ? '' : 's'}`);
+    if (typeof f.variant_fetches === 'number' && f.variant_fetches >= 5) bits.push(`walked ${f.variant_fetches} revision/diff/edit links`);
     if (typeof f.canary_seen === 'number' && f.canary_seen > 0) bits.push(`presented ${f.canary_seen} canar${f.canary_seen === 1 ? 'y' : 'ies'}`);
     if (typeof f.median_gap_ms === 'number' && ev.length > 3) bits.push(`median gap ${fmtDuration(f.median_gap_ms)}`);
     if (typeof f.concurrency === 'number' && f.concurrency > 1) bits.push(`up to ${f.concurrency} in flight`);

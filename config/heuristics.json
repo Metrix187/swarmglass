@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "updated": "2026-09-06",
   "notes": [
     "These are research heuristics, not ground truth. Every score is a weighted sum of plain rules over per-session features (see docs/DATA_DICTIONARY.md).",
@@ -7,7 +7,8 @@
     "User-agent families are self-declared strings and are weighted lightly on purpose. Behaviour carries the score.",
     "A 'probability' trait is logistic(prior + sum of fired weights). A 'scale' trait is clamp(base + sum, 0, 1). Classes are a softmax over per-class sums.",
     "v1 tightening after F-000: scripted 'targeted' requires n_alt < 2; retrieval gains 'alternates_many' (n_alt >= 5 and alt_share >= 0.3).",
-    "v2 after the first evening of real traffic (2026-09-06): a self-declared GPTBot crawl scored human. Browser evidence now needs proportion (asset_share), dwell needs irregular gaps, metronomic pacing and long asset-free reads count against human, and self-declared crawler/fetcher/previewer/monitor/headless UAs count against human the way library UAs already did. Retrieval loses 'alternates' by share and 'coherent' on site-wide sweeps, tool discovery loses on blanket crawls, aggressive gains 'blast', scripted gains 'probe'. The *-User fetcher families were split from the training crawlers."
+    "v2 after the first evening of real traffic (2026-09-06): a self-declared GPTBot crawl scored human. Browser evidence now needs proportion (asset_share), dwell needs irregular gaps, metronomic pacing and long asset-free reads count against human, and self-declared crawler/fetcher/previewer/monitor/headless UAs count against human the way library UAs already did. Retrieval loses 'alternates' by share and 'coherent' on site-wide sweeps, tool discovery loses on blanket crawls, aggressive gains 'blast', scripted gains 'probe'. The *-User fetcher families were split from the training crawlers.",
+    "v3, later the same evening: an MJ12bot crawl walked the ?oldid= / ?diff= / ?action= links the mirror itself emits and scored looping 0.9 and revisitation 0.8 without ever fetching the same url twice, plus scripted points for 'using query parameters'. revisit_rate and loop_score now key on the full url. variant_fetches/variant_share count site-emitted query variants (history walks, diffs, edit views); query_foreign counts keys the site never emits. scripted 'query' needs foreign keys now, search_bot and naive_crawler gain 'history_walk', curiosity credits it a little."
   ],
   "traits": {
     "automation_likelihood": {
@@ -416,6 +417,16 @@
           },
           "weight": 0.15,
           "note": "mixed resource kinds (pages, specials, feeds…)"
+        },
+        {
+          "id": "history_walk",
+          "when": {
+            "f": "variant_fetches",
+            "op": ">=",
+            "v": 5
+          },
+          "weight": 0.15,
+          "note": "walked revision history and diff links"
         }
       ]
     },
@@ -1484,6 +1495,25 @@
           },
           "weight": 1.0,
           "note": "self-declared model-training crawler; weighted like declared_search"
+        },
+        {
+          "id": "history_walk",
+          "when": {
+            "all": [
+              {
+                "f": "variant_fetches",
+                "op": ">=",
+                "v": 10
+              },
+              {
+                "f": "variant_share",
+                "op": ">=",
+                "v": 0.3
+              }
+            ]
+          },
+          "weight": 0.8,
+          "note": "walked revision history / diff / edit links the way an exhaustive crawler does"
         }
       ]
     },
@@ -1617,6 +1647,25 @@
           },
           "weight": 0.8,
           "note": "self-declared crawler family; which crawler class wins is still decided by behaviour"
+        },
+        {
+          "id": "history_walk",
+          "when": {
+            "all": [
+              {
+                "f": "variant_fetches",
+                "op": ">=",
+                "v": 10
+              },
+              {
+                "f": "variant_share",
+                "op": ">=",
+                "v": 0.3
+              }
+            ]
+          },
+          "weight": 0.8,
+          "note": "walked revision history / diff / edit links the way an exhaustive crawler does"
         }
       ]
     },
@@ -1769,12 +1818,12 @@
         {
           "id": "query",
           "when": {
-            "f": "query_usage",
+            "f": "query_foreign",
             "op": ">=",
             "v": 2
           },
           "weight": 0.8,
-          "note": "uses query parameters"
+          "note": "uses query parameters the site never emits"
         },
         {
           "id": "post",
