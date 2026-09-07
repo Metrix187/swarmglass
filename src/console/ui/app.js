@@ -370,6 +370,7 @@
     ], d.arms)), h('ul', { class: 'caveats' }, d.notes.map((n) => h('li', null, n))));
     const reach = e.outcomes.find((o) => o.metric === 'page_reached');
     if (reach) root.appendChild(card(`reach rate — ${reach.page || reach.id}`, hbars(d.arms.map((a) => ({ label: `${a.arm}: ${a.label}`, value: (a.outcomes[reach.id] && a.outcomes[reach.id].rate) || 0 })), { fmt: pct })));
+    if (d.tokens) root.appendChild(card('carrier urls — the revision id each arm hands out; a fetch is credited to the arm whose id it carries, whoever fetches it', kv(Object.fromEntries(Object.entries(d.tokens).map(([arm, tok]) => [`arm ${arm}`, `?oldid=${tok}`]))), d.unattributed && d.unattributed.sessions ? h('p', { class: 'hint' }, `${d.unattributed.sessions} session(s) / ${d.unattributed.actors} actor(s) fetched the target with no carrier id`) : null));
     root.appendChild(card('download', h('p', null, h('a', { href: `/api/experiments/${e.id}/bundle?${qs()}&level=public`, download: '' }, 'public bundle (sanitized json)'), ' · ', h('a', { href: `/api/experiments/${e.id}/bundle?${qs()}&level=internal`, download: '' }, 'internal bundle (keeps truncated prefixes + ua strings; never publish)')), h('p', { class: 'hint' }, 'bundles carry the definition, the comparison table, sanitized session rows, an event sample, seed + heuristics versions, and a sha256 of the payload.')));
     if (e.fiction_map) root.appendChild(card('fiction map — which public element is which stimulus', kv(e.fiction_map)));
     root.appendChild(card('definition', h('pre', null, JSON.stringify(e, null, 2))));
@@ -378,6 +379,7 @@
     if (v === null || v === undefined) return '—';
     if (typeof v === 'number') return String(v);
     if (typeof v === 'object') {
+      if ('exposed' in v) return `${v.reached}/${v.exposed} exposed (${pct(v.rate)}${v.wilson95 ? ` CI ${pct(v.wilson95[0])}–${pct(v.wilson95[1])}` : ''}) · ${v.cross_actor} cross-actor`;
       if ('rate' in v) return `${v.reached ?? v.sessions ?? 0} (${pct(v.rate)}${v.wilson95 ? ` CI ${pct(v.wilson95[0])}–${pct(v.wilson95[1])}` : ''})`;
       if ('median_s' in v) return v.median_s === null ? 'n/a' : `med ${v.median_s}s · p90 ${v.p90_s}s · n=${v.n}`;
       if ('mean' in v) return `mean ${v.mean ?? '—'} · max ${v.max ?? '—'}`;

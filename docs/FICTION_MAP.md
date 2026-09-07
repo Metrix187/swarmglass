@@ -39,6 +39,7 @@ The public site is a fictional wiki; the research layer is real. This is the map
 | `Cluster_Topology_2011`, `Message_Bus` redirect, `ops-log-2015-02.log` | stale index + archive sitemap only | `channels: [stale_index]` |
 | `Forager_Agent_Manual` | 410 Gone page listed in stale indexes | `gone: true` |
 | `Backup_2014_Restore_Notes`, `phero.conf.example` | orphans — nothing points at them | `discover: orphan` |
+| `?oldid=1xxxxx` on the urls SGX-011's carriers hand out | per-arm revision id: the mirror serves any revision id, so it reads as a permalink and says which carrier named the page | `armTokens` in `registry.ts` |
 | `Message_Bus_Migration_Checklist` | linked only from an HTML comment | comment on `Agent_Message_Bus` |
 | `Archive:*`, `User:*`, talk-page-only links | *obscure* — reachable only from pages that are themselves off the main graph | talk/archive pages |
 | `Old_Tool_Registry`, `Toolreg`, `Phero_Bus` → `Message_Bus` chain | alias and redirect-chain following | frontmatter `aliases`, `redirect` |

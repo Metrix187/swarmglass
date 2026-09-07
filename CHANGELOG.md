@@ -82,6 +82,10 @@ An MJ12bot crawl (242 requests, 236 with a query string) walked the `?oldid=` / 
 - console: a swarm's page shows its saturation curve (new pages per hour), per-page revisit intervals, and frontier lag (first fetch of a page after the pool last fetched a page that links to it, from the seed's link graph); the shape summary carries the conditional-request share.
 - **SGX-011 metadata-carrier activated 2026-09-07**: `Backup_2014_Restore_Notes` (an orphan page) is advertised on `Main_Page` through exactly one `<head>` carrier per actor, eleven arms from a real `og:see_also` to a bare url in a comment plus a no-carrier control. Written to answer F-001's open question: semantic Open Graph reader, generic url miner, or structured-document ingester. New variable `metadata_carrier`. The seed is unchanged on purpose: a seed bump rotates every canary id, and F-001's watch list of ids shown only to the swarm depends on them staying put.
 
+### SGX-011 v2: the arm rides in the url — 2026-09-07
+
+- The first six assignments under v1 showed the hole in the design: arms are per actor, the swarm in F-001 hands urls from the address that saw a carrier to another address that fetches them, and every arm named the same url, so a target fetch would have been credited to whatever arm the fetching address happened to draw. v2 names the target `?oldid=<six-digit id>`, one id per arm, never colliding with a seeded revision id, and the mirror answers any revision id as a permalink. `page_reached` for `metadata_carrier` experiments now credits a fetch to the arm whose id it carries whichever actor makes it, uses `exposed` (sessions in the arm that fetched the host page) as the denominator, splits `same_actor` from `cross_actor`, and counts fetches with no known id as `unattributed`. `seconds_to_page` becomes the lag from the arm's latest exposure to the tagged fetch. The version bump reshuffles arms; the six v1 sessions stay on record under v1 in `experiment_runs`.
+
 ### still open (operator)
 
 - `remote_ip` allowlist on the console's Caddy block once the research networks are known.

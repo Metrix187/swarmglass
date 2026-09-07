@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import type { Db } from '../db/db.ts';
 import type { Catalog } from '../wiki/content.ts';
 import type { ExperimentRegistry } from '../experiments/registry.ts';
-import { compareExperiment } from '../experiments/compare.ts';
+import { carrierLags, compareExperiment } from '../experiments/compare.ts';
 import { sanitizeSession, sanitizeSightings, assertNoLeak, type Level } from './sanitize.ts';
 import { barChart, cdfChart, matrixChart, propagationGraph, stackedBars } from './charts.ts';
 import { dayKey } from '../util/time.ts';
@@ -99,12 +99,16 @@ export function generateReport(deps: ReportDeps, opts: ReportOpts): { dir: strin
         );
       }
       if (timeOutcome) {
+        // carriers: the clock starts when the carrier was shown, to whoever ends up fetching the url
+        const carrier = def.variable === 'metadata_carrier';
         const series = comparison.arms.map((a) => {
           const like = `%"${def.id}":"${a.arm}"%`;
-          const dts = db.all<{ dt: number }>('SELECT pd.ts - s.started_at AS dt FROM page_discoveries pd JOIN sessions s ON s.id = pd.session_id WHERE s.cohorts_json LIKE ? AND pd.page_id = ? AND s.synthetic = 0 AND pd.ts >= ? AND pd.ts <= ?', like, timeOutcome.page ?? '', since, until).map((r) => r.dt / 1000);
+          const dts = carrier
+            ? carrierLags(db, def, a.arm, timeOutcome.page ?? '', opts.range, 'real').map((ms) => ms / 1000)
+            : db.all<{ dt: number }>('SELECT pd.ts - s.started_at AS dt FROM page_discoveries pd JOIN sessions s ON s.id = pd.session_id WHERE s.cohorts_json LIKE ? AND pd.page_id = ? AND s.synthetic = 0 AND pd.ts >= ? AND pd.ts <= ?', like, timeOutcome.page ?? '', since, until).map((r) => r.dt / 1000);
           return { label: `${a.arm}: ${a.label}`, values: dts };
         });
-        write(`charts/${def.id}_time_to_target.svg`, cdfChart(`${def.id} — time from session start to ${timeOutcome.page ?? 'target'}`, series));
+        write(`charts/${def.id}_time_to_target.svg`, cdfChart(`${def.id} — time from ${carrier ? 'the carrier being shown' : 'session start'} to ${timeOutcome.page ?? 'target'}`, series));
       }
       write(`charts/${def.id}_class_mix.svg`, stackedBars(`${def.id} — likely-class mix per arm`, comparison.arms.map((a) => ({ label: `${a.arm}: ${a.label}`, parts: a.classes })), [...new Set(comparison.arms.flatMap((a) => Object.keys(a.classes)))].sort()));
       write('arms.csv', armsCsv(comparison));
@@ -202,6 +206,7 @@ function fmtOutcome(v: unknown): string {
   if (typeof v === 'number') return String(v);
   if (typeof v === 'object') {
     const o = v as Record<string, unknown>;
+    if ('exposed' in o) return `${o.reached} of ${o.exposed} exposed (${o.rate === null ? 'n/a' : Math.round(Number(o.rate) * 100) + '%'}${o.wilson95 ? `, CI ${(o.wilson95 as number[]).map((x) => Math.round(x * 100) + '%').join('–')}` : ''}), ${o.cross_actor} from another actor`;
     if ('rate' in o) return `${o.reached ?? o.sessions ?? ''} (${o.rate === null ? 'n/a' : Math.round(Number(o.rate) * 100) + '%'}${o.wilson95 ? `, CI ${(o.wilson95 as number[]).map((x) => Math.round(x * 100) + '%').join('–')}` : ''})`;
     if ('median_s' in o) return o.median_s === null ? 'n/a' : `median ${o.median_s}s, p90 ${o.p90_s}s (n=${o.n})`;
     if ('mean' in o) return `mean ${o.mean ?? 'n/a'}, max ${o.max ?? 'n/a'}`;

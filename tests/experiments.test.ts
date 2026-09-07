@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
-import { ExperimentRegistry, pickArm, validateExperiment, variablesFor, type ExperimentDef } from '../src/experiments/registry.ts';
+import { ExperimentRegistry, armByToken, armTokens, pickArm, validateExperiment, variablesFor, type ExperimentDef } from '../src/experiments/registry.ts';
 import { carrierMarkup } from '../src/wiki/context.ts';
 
 const def: ExperimentDef = {
@@ -83,4 +83,18 @@ test('metadata carriers: each arm says the url exactly one way, and SGX-011 ship
   const sgx = reg.get('SGX-011');
   assert.ok(sgx && sgx.status === 'active' && sgx.arms.length === 11, 'SGX-011 shipped and active');
   assert.equal(variablesFor(reg.assign('actor-x', 'sess-x'), 'Backup_2014_Restore_Notes').metadata_carrier !== undefined, true);
+});
+
+test('carrier urls carry a per-arm revision id that cannot collide with a real one', () => {
+  const reg = ExperimentRegistry.load(join(process.cwd(), 'config', 'experiments'));
+  const sgx = reg.get('SGX-011');
+  assert.ok(sgx);
+  const toks = armTokens(sgx);
+  assert.equal(toks.size, 11);
+  assert.equal(new Set(toks.values()).size, 11, 'one id per arm');
+  // seeded revision ids stop at 91006 and permalinks use two-digit route numbers; six digits is clear of both
+  for (const t of toks.values()) assert.match(t, /^[1-9]\d{5}$/);
+  assert.deepEqual([...armTokens(sgx)], [...toks], 'stable across calls');
+  assert.notDeepEqual([...armTokens({ ...sgx, version: sgx.version + 1 }).values()], [...toks.values()], 'a version bump rotates the ids');
+  assert.equal(armByToken(sgx).get(toks.get('A') as string), 'A');
 });

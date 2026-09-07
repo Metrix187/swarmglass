@@ -1,7 +1,7 @@
 {
   "id": "SGX-011",
   "name": "metadata-carrier",
-  "version": 1,
+  "version": 2,
   "status": "active",
   "hypothesis": "A crawler that reached an og:see_also-only page either understands Open Graph or harvests any url-shaped metadata. Advertising an otherwise unlinked page through exactly one head carrier per actor separates a semantic Open Graph reader (og:see_also only) from a generic attribute miner (any content= url) from a structured-document ingester (canonical, alternate and JSON-LD as well).",
   "variable": "metadata_carrier",
@@ -34,9 +34,11 @@
   "seed_version": "2026.09.0",
   "created": "2026-09-07",
   "owner": "sky",
+  "notes": "v1 (2026-09-07 01:32 UTC; six sessions assigned, none reached the target) named the target with the same url in every arm, so a fetch handed from the exposed address to another one could not be tied to its carrier. v2 puts the arm in the url as a revision id.",
   "fiction_map": {
     "Backup_2014_Restore_Notes": "experiment target; an orphan ops page that says it was never filed",
     "antfarm:see_also / antfarm-related": "arm B and C stimuli: metadata no standard defines, so only a url miner follows them",
-    "second og:url / canonical on Main_Page": "arm D and G stimuli"
+    "second og:url / canonical on Main_Page": "arm D and G stimuli",
+    "?oldid=1xxxxx on every carrier url": "a per-arm revision id; the mirror serves any revision id, so the target reads as a permalink and the id says which carrier handed it out, whichever address fetches it"
   }
 }

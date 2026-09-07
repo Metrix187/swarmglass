@@ -186,6 +186,36 @@ export function pickArm(d: ExperimentDef, key: string): Arm {
   return d.arms[d.arms.length - 1] as Arm;
 }
 
+// the query key a metadata_carrier url carries its arm in. ?oldid= is what the mirror's own permalinks use
+// and the article route answers any revision id, so the target reads as a permalink, not a tracking link
+export const CARRIER_TOKEN_KEY = 'oldid';
+
+// one fake revision id per arm. the swarm in F-001 hands urls from the address that saw the carrier to
+// another address that does the fetching, so the fetching session's own cohort says nothing about which
+// carrier did the work; the id in the url does. six digits so it can never collide with the seed's real
+// revision ids (1000..91006) or the permalink route numbers
+export function armTokens(d: ExperimentDef): Map<string, string> {
+  const out = new Map<string, string>();
+  const used = new Set<string>();
+  for (const a of d.arms) {
+    let tok = '';
+    for (let n = 0; ; n++) {
+      tok = String(100000 + (fnv1a(`${d.assignment.salt}|${d.id}|v${d.version}|arm:${a.id}|${n}`) % 900000));
+      if (!used.has(tok)) break;
+    }
+    used.add(tok);
+    out.set(a.id, tok);
+  }
+  return out;
+}
+
+// the reverse lookup: which arm handed out this revision id
+export function armByToken(d: ExperimentDef): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const [arm, tok] of armTokens(d)) out.set(tok, arm);
+  return out;
+}
+
 // resolves the effective variables for a page under an assignment
 export function variablesFor(a: Assignment | null, pageId: string | null): Record<VariableName, VariableValue> {
   const out: Record<VariableName, VariableValue> = { ...DEFAULTS };

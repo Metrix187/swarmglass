@@ -4,7 +4,7 @@ import type { Req } from '../http/server.ts';
 import type { Catalog, DiscoverClass, Page } from './content.ts';
 import type { CanaryService, Canary, Placement } from '../telemetry/canary.ts';
 import type { SessionState } from '../telemetry/session.ts';
-import { ExperimentRegistry, variablesFor, type Assignment, type VariableName, type VariableValue } from '../experiments/registry.ts';
+import { CARRIER_TOKEN_KEY, ExperimentRegistry, armTokens, variablesFor, type Assignment, type VariableName, type VariableValue } from '../experiments/registry.ts';
 import type { RenderCtx } from './render.ts';
 import { randomId } from '../util/hash.ts';
 import { esc } from '../http/html.ts';
@@ -155,9 +155,11 @@ export function reqCtx(deps: WikiDeps, req: Req): ReqCtx {
         if (d.variable !== 'metadata_carrier' || d.params?.host_page !== hostPageId) continue;
         const armDef = d.arms.find((a) => a.id === assignment.cohorts[d.id]);
         if (!armDef) continue;
+        // the arm rides along in the url as a revision id, so a fetch from some other address still says which carrier it came from
+        const tok = armTokens(d).get(armDef.id);
         for (const t of d.targets) {
           if (!deps.cat.pages.has(t)) continue;
-          const m = carrierMarkup(armDef.value, `${deps.cfg.public.baseUrl}${wikiHref(bp, t)}`, d.params?.comment_text);
+          const m = carrierMarkup(armDef.value, `${deps.cfg.public.baseUrl}${wikiHref(bp, t)}?${CARRIER_TOKEN_KEY}=${tok}`, d.params?.comment_text);
           if (m) html += m + '\n';
         }
       }

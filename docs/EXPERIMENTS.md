@@ -21,7 +21,7 @@ One experiment changes **one variable** on **one target** (or site-wide for the 
 | SGX-008 | deprecation-flag | deprecation_flag | targets | `Deprecated_Agent_API` | off · on | **active** |
 | SGX-009 | metadata-density | metadata_density | global | — | dense · sparse | paused |
 | SGX-010 | documentation-language | doc_language | targets | `Memory_Synchronization` | terse · verbose | **active** |
-| SGX-011 | metadata-carrier | metadata_carrier | targets | `Backup_2014_Restore_Notes` | og:see_also · fake-namespace see_also · arbitrary meta content url · og:url · og:image · link alternate · link canonical · json-ld · bare head text · html comment · none | **active** (2026-09-07) |
+| SGX-011 | metadata-carrier | metadata_carrier | targets | `Backup_2014_Restore_Notes` | og:see_also · fake-namespace see_also · arbitrary meta content url · og:url · og:image · link alternate · link canonical · json-ld · bare head text · html comment · none | **active** (2026-09-07; v2 the same night, with per-arm revision ids in the url) |
 
 Global experiments (004, 006, 009) are paused by default because only one may run at a time and each changes every page; activate one deliberately and note it in `CHANGELOG.md`.
 
@@ -39,18 +39,20 @@ Global experiments (004, 006, 009) are paused by default because only one may ru
 | `deprecation_flag` | `off` `on` | a loud superseded/deprecated banner and the `{{#deprecated}}` block |
 | `metadata_density` | `dense` `sparse` | OpenGraph, canonical, edit link, description, article tags, alternates footer, `og:see_also`, infobox rows |
 | `doc_language` | `terse` `verbose` | `{{#terse}}…{{/terse}}` vs `{{#verbose}}…{{/verbose}}` blocks in the page body |
-| `metadata_carrier` | `og_see_also` `fake_ns_see_also` `meta_content_url` `og_url` `og_image` `link_alternate` `link_canonical` `jsonld` `head_text` `html_comment` `none` | which single `<head>` carrier on `params.host_page` advertises the target's url; the target must be an `experiment` or `orphan` page. Reaching it records the carrier's class (`og_only`, `jsonld_only`, `link_only`, `comment_only`, `obscure`) |
+| `metadata_carrier` | `og_see_also` `fake_ns_see_also` `meta_content_url` `og_url` `og_image` `link_alternate` `link_canonical` `jsonld` `head_text` `html_comment` `none` | which single `<head>` carrier on `params.host_page` advertises the target's url; the target must be an `experiment` or `orphan` page. Reaching it records the carrier's class (`og_only`, `jsonld_only`, `link_only`, `comment_only`, `obscure`). The url carries a per-arm revision id (`?oldid=1xxxxx`; the mirror answers any revision id as a permalink), so a fetch is credited to the carrier that named it whichever actor fetches it |
 
 ## Assignment
 
 `arm = arms[fnv1a("<salt>|<id>|v<version>|<actorHash>") mod Σ weights]`. Per actor (default) so a crawler that returns keeps its arm; per session if `assignment.unit = "session"`. Bumping `version` reshuffles on purpose. Arms are recorded on every session and event (`cohorts_json`) so a later definition change cannot rewrite history.
 
+Per-actor assignment assumes the actor that sees a stimulus is the one that acts on it. A pool that hands urls between addresses (F-001) breaks that assumption, which is why `metadata_carrier` puts the arm in the url itself and credits fetches by it.
+
 ## Outcomes
 
 | metric | computed as |
 |---|---|
-| `page_reached` | sessions in the arm with ≥ 1 successful fetch of `page` ÷ sessions in the arm, with a Wilson 95% interval; `page: "api:openapi"` counts the OpenAPI route |
-| `seconds_to_page` | median and p90 of (first discovery of `page` − session start) |
+| `page_reached` | sessions in the arm with ≥ 1 successful fetch of `page` ÷ sessions in the arm, with a Wilson 95% interval; `page: "api:openapi"` counts the OpenAPI route. For `metadata_carrier` experiments: sessions that fetched `page` carrying the arm's revision id, from any cohort, ÷ sessions in the arm that fetched the host page (`exposed`), split into `same_actor` and `cross_actor`; fetches carrying no known id are reported once as `unattributed` |
+| `seconds_to_page` | median and p90 of (first discovery of `page` − session start); for `metadata_carrier`, of (tagged fetch − the arm's latest host-page exposure before it), which is the handoff lag |
 | `alt_requested` | sessions that fetched an alternate representation of `page` |
 | `canary_reappeared` | sessions that presented any canary |
 | `depth_reached` | mean and max of `max_depth` |

@@ -132,3 +132,25 @@ ORDER BY sessions DESC;
 ```
 
 `src/telemetry/swarm.ts` runs the same idea every five minutes and writes a `kind = 'swarm'` row into `clusters`; this is the by-hand version for a snapshot.
+
+## SGX-011: which carrier handed out the url, whichever address fetched it
+
+Each arm names the target with its own six-digit revision id (`?oldid=`, from `armTokens()` in `src/experiments/registry.ts`; seeded revision ids stop at 91006). Credit goes to the id in the url, not to the fetcher's cohort, because the F-001 pool fetches from a different address than the one that was shown the carrier.
+
+```sql
+-- tagged fetches by id; map ids back to arms with armTokens(def)
+SELECT json_extract(e.query_json, '$.oldid') AS oldid,
+       COUNT(DISTINCT e.session_id) AS sessions,
+       COUNT(DISTINCT e.actor_hash) AS actors,
+       MIN(e.ts) AS first_ts
+FROM events e
+WHERE e.synthetic = 0 AND e.page_id = 'Backup_2014_Restore_Notes' AND e.status < 400
+GROUP BY oldid ORDER BY sessions DESC;
+
+-- the handoff itself: fetchers whose actor never fetched the host page
+SELECT e.ts, e.session_id, json_extract(e.query_json, '$.oldid') AS oldid, s.ua_family, s.cluster_id
+FROM events e JOIN sessions s ON s.id = e.session_id
+WHERE e.synthetic = 0 AND e.page_id = 'Backup_2014_Restore_Notes' AND e.status < 400
+  AND e.actor_hash NOT IN (SELECT actor_hash FROM events WHERE page_id = 'Main_Page' AND status < 400)
+ORDER BY e.ts;
+```

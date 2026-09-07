@@ -357,3 +357,26 @@ test('stable documents carry an ETag and answer 304 to a matching If-None-Match'
   assert.equal(r4.headers.get('etag'), null);
   await r4.text();
 });
+
+test('SGX-011 carriers name the target with the arm revision id, and the tagged url answers like a permalink', async () => {
+  const def = app.registry.get('SGX-011');
+  assert.ok(def);
+  const { armTokens } = await import('../src/experiments/registry.ts');
+  const ids = new Set(armTokens(def).values());
+  let tagged = 0;
+  // twelve distinct actors: with eleven arms at least a few land on a carrier that says something
+  for (let i = 0; i < 12; i++) {
+    const r = await get('/wiki/Main_Page', { headers: { 'user-agent': `carrier-probe/${i}` } });
+    assert.equal(r.status, 200);
+    const html = await r.text();
+    for (const m of html.matchAll(/Backup_2014_Restore_Notes\?oldid=(\d+)/g)) {
+      tagged++;
+      assert.ok(ids.has(m[1] as string), `carrier url carries an unknown id ${m[1]}`);
+    }
+    assert.ok(!html.replace(/Backup_2014_Restore_Notes\?oldid=\d+/g, '').includes('Backup_2014_Restore_Notes'), 'the target is never named without its id');
+  }
+  assert.ok(tagged >= 6, `expected most probes to be shown a carrier, saw ${tagged}`);
+  const r = await get(`/wiki/Backup_2014_Restore_Notes?oldid=${[...ids][0]}`, { headers: { 'user-agent': 'carrier-probe/x' } });
+  assert.equal(r.status, 200);
+  assert.ok((await r.text()).includes('old revision'));
+});
