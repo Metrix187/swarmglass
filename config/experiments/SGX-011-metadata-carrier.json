@@ -9,7 +9,7 @@
   "targets": ["Backup_2014_Restore_Notes"],
   "params": {
     "host_page": "*",
-    "host_page_history": [{ "until": "2026-09-07T21:31:00Z", "host_page": "Main_Page" }],
+    "host_page_history": [{ "until": "2026-09-07T21:14:00Z", "host_page": "Main_Page" }],
     "comment_text": "svanterpool 2014-04: restore notes, never filed:"
   },
   "arms": [
@@ -35,7 +35,7 @@
   "seed_version": "2026.09.0",
   "created": "2026-09-07",
   "owner": "sky",
-  "notes": "v1 (2026-09-07 01:32 UTC; six sessions assigned, none reached the target) named the target with the same url in every arm, so a fetch handed from the exposed address to another one could not be tied to its carrier. v2 puts the arm in the url as a revision id. 2026-09-07 21:31 UTC: host widened from Main_Page to every article (targets excepted) because a member rendered Main_Page about once an hour and, with the pool sampling what it sees, each arm needs many exposures rather than one; version unchanged so the ids already in the pool's queue stay attributable.",
+  "notes": "v1 (2026-09-07 01:32 UTC; six sessions assigned, none reached the target) named the target with the same url in every arm, so a fetch handed from the exposed address to another one could not be tied to its carrier. v2 puts the arm in the url as a revision id. 2026-09-07 21:14 UTC: host widened from Main_Page to every article (targets excepted) because a member rendered Main_Page about once an hour and, with the pool sampling what it sees, each arm needs many exposures rather than one; version unchanged so the ids already in the pool's queue stay attributable.",
   "fiction_map": {
     "Backup_2014_Restore_Notes": "experiment target; an orphan ops page that says it was never filed",
     "antfarm:see_also / antfarm-related": "arm B and C stimuli: metadata no standard defines, so only a url miner follows them",
