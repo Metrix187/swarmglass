@@ -127,10 +127,10 @@ export function reqCtx(deps: WikiDeps, req: Req): ReqCtx {
       let discover = page.discover;
       let depth = page.depth;
       if (ov.link_visibility) discover = LV_TO_DISCOVER[ov.link_visibility] ?? discover;
-      if (ov.metadata_carrier) discover = MC_TO_DISCOVER[ov.metadata_carrier] ?? discover;
-      // a carrier target fetched with an arm's revision id was found through that arm's carrier, whoever is
-      // fetching. the fetcher's own arm is just a hash: the first real hit (F-001) came from an address that
-      // had drawn "canonical" and got stamped link_only for following an og:image
+      // a carrier target's class comes from the id in the url and never from the fetcher's own arm, which is
+      // just a hash: the first real hit (F-001) came from an address that had drawn "canonical" and got
+      // stamped link_only for following an og:image. a fetch with no id was found some other way (the
+      // target's own history and info links once it sits in somebody's frontier) and keeps the page's own class
       const tok = ov.metadata_carrier ? req.query.get(CARRIER_TOKEN_KEY) : null;
       if (tok) {
         for (const d of deps.registry.active()) {

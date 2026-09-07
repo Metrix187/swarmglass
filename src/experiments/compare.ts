@@ -181,7 +181,9 @@ export function unattributedReaches(db: Db, def: ExperimentDef, range: Range, sy
   const sessions = new Set<string>();
   const actors = new Set<string>();
   for (const page of def.targets) {
-    const rows = db.all<{ session_id: string; actor_hash: string; query_json: string | null }>(`SELECT DISTINCT session_id, actor_hash, query_json FROM events WHERE page_id = ? AND status < 400 AND ts >= ? AND ts <= ?${eventSynth(synthetic)}`, page, range.since, range.until);
+    // page renders only: once the target sits in a crawler's frontier its history, info and export views get
+    // walked too, and those are furniture of a page already reached, not reaches
+    const rows = db.all<{ session_id: string; actor_hash: string; query_json: string | null }>(`SELECT DISTINCT session_id, actor_hash, query_json FROM events WHERE page_id = ? AND status < 400 AND resource_kind = 'page' AND ts >= ? AND ts <= ?${eventSynth(synthetic)}`, page, range.since, range.until);
     const tagged = new Set<string>();
     for (const r of rows) {
       let tok: string | undefined;

@@ -387,6 +387,11 @@ test('SGX-011 carriers name the target with the arm revision id, and the tagged 
   const cls = (tok: string) => app.db.get<{ discover_class: string }>("SELECT discover_class FROM events WHERE page_id = 'Backup_2014_Restore_Notes' AND query_json LIKE ? ORDER BY ts DESC LIMIT 1", `%"oldid":"${tok}"%`)?.discover_class;
   assert.equal(cls(toks.get('A') as string), 'og_only');
   assert.equal(cls(toks.get('H') as string), 'jsonld_only');
+  // no id at all: found some other way, so the page keeps its own class instead of borrowing the fetcher's arm
+  const bare = await get('/wiki/Backup_2014_Restore_Notes', { headers: { 'user-agent': 'carrier-probe/x' } });
+  assert.equal(bare.status, 200);
+  flush();
+  assert.equal(app.db.get<{ discover_class: string }>("SELECT discover_class FROM events WHERE page_id = 'Backup_2014_Restore_Notes' AND query_json IS NULL ORDER BY ts DESC LIMIT 1")?.discover_class, 'orphan');
 });
 
 test('an unknown path is a 404, not a 405 borrowed from the OPTIONS catch-all', async () => {
