@@ -22,7 +22,7 @@ const def = registry.get(id);
 if (!def) usage([`no experiment ${id}; known: ${registry.defs.map((d) => d.id).join(', ')}`]);
 const heuristics = loadHeuristics(join(cfg.configDir, 'heuristics.json'));
 const level = str(flags, 'level', 'public') === 'internal' ? 'internal' : 'public';
-const b = bundleExperiment(db, cat, def, parseRange(str(flags, 'range', '30d')), 'real', level, heuristics.version, cfg.version);
+const b = bundleExperiment(db, cat, def, parseRange(str(flags, 'range', '30d')), 'real', level, heuristics.version, cfg.version, registry.active());
 const dir = str(flags, 'out', join(ROOT, 'reports'));
 mkdirSync(dir, { recursive: true });
 const file = join(dir, `${id}-bundle-${level}-${dayKey(Date.now())}.json`);

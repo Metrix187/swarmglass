@@ -243,7 +243,7 @@ export function buildConsoleRouter(deps: ConsoleDeps): Router {
     const def = deps.registry.get(rq.params.id ?? '');
     if (!def) return j(404, { error: 'no such experiment' });
     const level: Level = rq.query.get('level') === 'internal' ? 'internal' : 'public';
-    const b = bundleExperiment(deps.db, deps.cat, def, range(rq), synth(rq), level, deps.heuristics().version, deps.cfg.version);
+    const b = bundleExperiment(deps.db, deps.cat, def, range(rq), synth(rq), level, deps.heuristics().version, deps.cfg.version, deps.registry.active());
     auth.audit(s.user, 'bundle', `${def.id} ${level}`);
     return { status: 200, headers: { 'content-type': 'application/json; charset=utf-8', 'content-disposition': `attachment; filename="${def.id}-bundle-${dayKey(Date.now())}.json"` }, body: JSON.stringify(b, null, 2) };
   }), 'bundle');

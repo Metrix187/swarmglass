@@ -4,7 +4,7 @@ import type { Req } from '../http/server.ts';
 import type { Catalog, DiscoverClass, Page } from './content.ts';
 import type { CanaryService, Canary, Placement } from '../telemetry/canary.ts';
 import type { SessionState } from '../telemetry/session.ts';
-import { CARRIER_TOKEN_KEY, ExperimentRegistry, armByToken, armTokens, variablesFor, type Assignment, type VariableName, type VariableValue } from '../experiments/registry.ts';
+import { CARRIER_TOKEN_KEY, ExperimentRegistry, armByToken, armTokens, isCarrierHost, variablesFor, type Assignment, type VariableName, type VariableValue } from '../experiments/registry.ts';
 import type { RenderCtx } from './render.ts';
 import { randomId } from '../util/hash.ts';
 import { esc } from '../http/html.ts';
@@ -164,7 +164,7 @@ export function reqCtx(deps: WikiDeps, req: Req): ReqCtx {
     carriers(hostPageId) {
       let html = '';
       for (const d of deps.registry.active()) {
-        if (d.variable !== 'metadata_carrier' || d.params?.host_page !== hostPageId) continue;
+        if (d.variable !== 'metadata_carrier' || !isCarrierHost(d, deps.registry.active(), hostPageId)) continue;
         const armDef = d.arms.find((a) => a.id === assignment.cohorts[d.id]);
         if (!armDef) continue;
         // the arm rides along in the url as a revision id, so a fetch from some other address still says which carrier it came from

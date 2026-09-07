@@ -22,8 +22,8 @@ export interface Bundle {
   sha256: string;
 }
 
-export function bundleExperiment(db: Db, cat: Catalog, def: ExperimentDef, range: { since: number; until: number }, synthetic: 'real' | 'synthetic' | 'all', level: Level, heuristicsVersion: number, appVersion: string): Bundle {
-  const comparison = compareExperiment(db, cat, def, range, synthetic);
+export function bundleExperiment(db: Db, cat: Catalog, def: ExperimentDef, range: { since: number; until: number }, synthetic: 'real' | 'synthetic' | 'all', level: Level, heuristicsVersion: number, appVersion: string, active: ExperimentDef[] = [def]): Bundle {
+  const comparison = compareExperiment(db, cat, def, range, synthetic, active);
   const sf = synthetic === 'all' ? '' : ` AND synthetic = ${synthetic === 'synthetic' ? 1 : 0}`;
   const rows = db.all<Record<string, unknown>>(`SELECT * FROM sessions WHERE cohorts_json LIKE ? AND started_at >= ? AND started_at <= ?${sf} ORDER BY started_at LIMIT 5000`, `%"${def.id}":%`, range.since, range.until);
   const keyed = new Map<string, string>();

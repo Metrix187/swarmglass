@@ -50,8 +50,11 @@ for (const d of reg.defs) {
     if (page.discover !== 'experiment' && page.discover !== 'orphan') problems.push(`${d.id}: target ${t} has discover=${page.discover}; a metadata_carrier target must be an experiment or orphan page`);
     for (const p of cat.pages.values()) if (p.links.some((l) => resolveAlias(cat.pages, l) === t)) problems.push(`${d.id}: ${p.id} links to target ${t} in visible prose`);
   }
+  // "*" is every article except the experiment targets; anything else has to be a real page, and so does every earlier host
+  const hosts = [d.params?.host_page, ...(d.params?.host_page_history ?? []).map((h) => h.host_page)];
   if (!d.params?.host_page) problems.push(`${d.id}: metadata_carrier needs params.host_page`);
-  else if (!cat.pages.has(d.params.host_page)) problems.push(`${d.id}: host_page ${d.params.host_page} does not exist`);
+  for (const h of hosts) if (h && h !== '*' && !cat.pages.has(h)) problems.push(`${d.id}: host_page ${h} does not exist`);
+  for (const h of d.params?.host_page_history ?? []) if (Number.isNaN(Date.parse(h.until))) problems.push(`${d.id}: host_page_history until "${h.until}" is not a date`);
 }
 problems.push(...reg.errors);
 

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
-import { ExperimentRegistry, armByToken, armTokens, pickArm, validateExperiment, variablesFor, type ExperimentDef } from '../src/experiments/registry.ts';
+import { ExperimentRegistry, armByToken, armTokens, isCarrierHost, pickArm, validateExperiment, variablesFor, type ExperimentDef } from '../src/experiments/registry.ts';
 import { carrierMarkup } from '../src/wiki/context.ts';
 
 const def: ExperimentDef = {
@@ -97,4 +97,18 @@ test('carrier urls carry a per-arm revision id that cannot collide with a real o
   assert.deepEqual([...armTokens(sgx)], [...toks], 'stable across calls');
   assert.notDeepEqual([...armTokens({ ...sgx, version: sgx.version + 1 }).values()], [...toks.values()], 'a version bump rotates the ids');
   assert.equal(armByToken(sgx).get(toks.get('A') as string), 'A');
+});
+
+test('a carrier hosted on every article leaves out the experiment targets', () => {
+  const reg = ExperimentRegistry.load(join(process.cwd(), 'config', 'experiments'));
+  const sgx = reg.get('SGX-011');
+  assert.ok(sgx);
+  assert.equal(sgx.params?.host_page, '*');
+  const active = reg.active();
+  assert.ok(isCarrierHost(sgx, active, 'Main_Page'));
+  assert.ok(isCarrierHost(sgx, active, 'Colony_Glossary'));
+  assert.ok(!isCarrierHost(sgx, active, 'Backup_2014_Restore_Notes'), 'never on the target itself');
+  assert.ok(!isCarrierHost(sgx, active, 'Model_Compatibility_Matrix'), 'never on another experiment\'s target');
+  const narrow = { ...sgx, params: { ...sgx.params, host_page: 'Main_Page' } };
+  assert.ok(isCarrierHost(narrow, active, 'Main_Page') && !isCarrierHost(narrow, active, 'Colony_Glossary'), 'a named host is that page only');
 });

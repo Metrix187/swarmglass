@@ -73,7 +73,10 @@ export interface ExperimentDef {
   notes?: string;
   fiction_map?: Record<string, string>; // public fictional element -> what it is for
   // link_visibility and metadata_carrier experiments say which page hosts the stimulus and what it says
-  params?: { host_page?: string; anchor_text?: string; comment_text?: string };
+  // host_page "*" (metadata_carrier only) puts the stimulus on every article except the experiment targets.
+  // host_page_history records earlier hosts with the moment they stopped, so exposures before a widening are
+  // still counted against the page that carried the stimulus then
+  params?: { host_page?: string; host_page_history?: { until: string; host_page: string }[]; anchor_text?: string; comment_text?: string };
 }
 
 export interface Assignment {
@@ -214,6 +217,27 @@ export function armByToken(d: ExperimentDef): Map<string, string> {
   const out = new Map<string, string>();
   for (const [arm, tok] of armTokens(d)) out.set(tok, arm);
   return out;
+}
+
+// where a metadata_carrier experiment shows its stimulus. host_page "*" means every article render except the
+// target itself and the targets of the other active experiments, so one variable still changes one page.
+// a member of the F-001 pool renders Main_Page about once an hour; on every article it is every request
+export interface CarrierHosts {
+  all: boolean;
+  only: string | null;
+  exclude: string[];
+}
+
+export function carrierHosts(host: string | undefined, d: ExperimentDef, active: ExperimentDef[]): CarrierHosts {
+  if (host !== '*') return { all: false, only: host || null, exclude: [] };
+  const exclude = new Set<string>(d.targets);
+  for (const o of active) if (o.id !== d.id) for (const t of o.targets) exclude.add(t);
+  return { all: true, only: null, exclude: [...exclude] };
+}
+
+export function isCarrierHost(d: ExperimentDef, active: ExperimentDef[], pageId: string): boolean {
+  const h = carrierHosts(d.params?.host_page, d, active);
+  return h.all ? !h.exclude.includes(pageId) : h.only === pageId;
 }
 
 // resolves the effective variables for a page under an assignment

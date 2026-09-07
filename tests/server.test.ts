@@ -363,19 +363,29 @@ test('SGX-011 carriers name the target with the arm revision id, and the tagged 
   assert.ok(def);
   const { armTokens } = await import('../src/experiments/registry.ts');
   const ids = new Set(armTokens(def).values());
-  let tagged = 0;
-  // twelve distinct actors: with eleven arms at least a few land on a carrier that says something
-  for (let i = 0; i < 12; i++) {
-    const r = await get('/wiki/Main_Page', { headers: { 'user-agent': `carrier-probe/${i}` } });
-    assert.equal(r.status, 200);
-    const html = await r.text();
-    for (const m of html.matchAll(/Backup_2014_Restore_Notes\?oldid=(\d+)/g)) {
-      tagged++;
-      assert.ok(ids.has(m[1] as string), `carrier url carries an unknown id ${m[1]}`);
+  // twelve distinct actors: with eleven arms at least a few land on a carrier that says something. the host is
+  // "every article", so an ordinary page carries it as much as Main_Page does
+  for (const page of ['Main_Page', 'Colony_Glossary']) {
+    let tagged = 0;
+    for (let i = 0; i < 12; i++) {
+      const r = await get(`/wiki/${page}`, { headers: { 'user-agent': `carrier-probe/${i}` } });
+      assert.equal(r.status, 200);
+      const html = await r.text();
+      for (const m of html.matchAll(/Backup_2014_Restore_Notes\?oldid=(\d{6})/g)) {
+        tagged++;
+        assert.ok(ids.has(m[1] as string), `carrier url carries an unknown id ${m[1]}`);
+      }
+      assert.ok(!html.replace(/Backup_2014_Restore_Notes\?oldid=\d{6}/g, '').includes('Backup_2014_Restore_Notes'), 'the target is never named without its id');
     }
-    assert.ok(!html.replace(/Backup_2014_Restore_Notes\?oldid=\d+/g, '').includes('Backup_2014_Restore_Notes'), 'the target is never named without its id');
+    assert.ok(tagged >= 6, `expected most probes to be shown a carrier on ${page}, saw ${tagged}`);
   }
-  assert.ok(tagged >= 6, `expected most probes to be shown a carrier, saw ${tagged}`);
+  // and it stays off the other experiments' targets and off the target itself, whatever the actor's arm
+  for (const page of ['Model_Compatibility_Matrix', 'Backup_2014_Restore_Notes']) {
+    for (let i = 0; i < 12; i++) {
+      const html = await (await get(`/wiki/${page}`, { headers: { 'user-agent': `carrier-probe/${i}` } })).text();
+      assert.ok(!/Backup_2014_Restore_Notes\?oldid=\d{6}/.test(html), `${page} must not carry the stimulus`);
+    }
+  }
   const r = await get(`/wiki/Backup_2014_Restore_Notes?oldid=${[...ids][0]}`, { headers: { 'user-agent': 'carrier-probe/x' } });
   assert.equal(r.status, 200);
   assert.ok((await r.text()).includes('old revision'));

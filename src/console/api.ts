@@ -393,7 +393,7 @@ export function experimentList(d: QueryDeps): Record<string, unknown> {
 export function experimentDetail(d: QueryDeps, id: string, range: Range, synthetic: 'real' | 'synthetic' | 'all'): Comparison | null {
   const def = d.registry.get(id);
   if (!def) return null;
-  return compareExperiment(d.db, d.cat, def, range, synthetic);
+  return compareExperiment(d.db, d.cat, def, range, synthetic, d.registry.active());
 }
 
 export function motifs(d: QueryDeps, range: Range, synthetic: 'real' | 'synthetic' | 'all', n = 3): Array<Record<string, unknown>> {

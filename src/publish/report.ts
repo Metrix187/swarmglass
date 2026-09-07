@@ -86,7 +86,7 @@ export function generateReport(deps: ReportDeps, opts: ReportOpts): { dir: strin
   if (opts.experimentId) {
     const def = deps.registry.get(opts.experimentId);
     if (def) {
-      comparison = compareExperiment(db, cat, def, opts.range, 'real');
+      comparison = compareExperiment(db, cat, def, opts.range, 'real', deps.registry.active());
       const reachOutcome = def.outcomes.find((o) => o.metric === 'page_reached');
       const timeOutcome = def.outcomes.find((o) => o.metric === 'seconds_to_page');
       if (reachOutcome) {
@@ -104,7 +104,7 @@ export function generateReport(deps: ReportDeps, opts: ReportOpts): { dir: strin
         const series = comparison.arms.map((a) => {
           const like = `%"${def.id}":"${a.arm}"%`;
           const dts = carrier
-            ? carrierLags(db, def, a.arm, timeOutcome.page ?? '', opts.range, 'real').map((ms) => ms / 1000)
+            ? carrierLags(db, def, a.arm, timeOutcome.page ?? '', opts.range, 'real', deps.registry.active()).map((ms) => ms / 1000)
             : db.all<{ dt: number }>('SELECT pd.ts - s.started_at AS dt FROM page_discoveries pd JOIN sessions s ON s.id = pd.session_id WHERE s.cohorts_json LIKE ? AND pd.page_id = ? AND s.synthetic = 0 AND pd.ts >= ? AND pd.ts <= ?', like, timeOutcome.page ?? '', since, until).map((r) => r.dt / 1000);
           return { label: `${a.arm}: ${a.label}`, values: dts };
         });

@@ -1,6 +1,6 @@
 import type { Db } from '../db/db.ts';
 import type { Catalog } from '../wiki/content.ts';
-import { armByToken, armTokens, CARRIER_TOKEN_KEY, type ExperimentDef } from './registry.ts';
+import { armByToken, armTokens, CARRIER_TOKEN_KEY, carrierHosts, type ExperimentDef } from './registry.ts';
 import { median, percentile } from '../util/time.ts';
 
 // per-arm outcome comparison. every number is computed from persisted rows, so a
@@ -29,7 +29,8 @@ export interface Comparison {
   unattributed?: { sessions: number; actors: number };
 }
 
-export function compareExperiment(db: Db, cat: Catalog, def: ExperimentDef, range: { since: number; until: number }, synthetic: 'real' | 'synthetic' | 'all'): Comparison {
+// `active` is every active definition, so a carrier hosted on "every article" knows which pages to leave out
+export function compareExperiment(db: Db, cat: Catalog, def: ExperimentDef, range: { since: number; until: number }, synthetic: 'real' | 'synthetic' | 'all', active: ExperimentDef[] = [def]): Comparison {
   const sf = synthetic === 'all' ? '' : ` AND s.synthetic = ${synthetic === 'synthetic' ? 1 : 0}`;
   // carriers hand out a url that may be fetched by someone else entirely, so their reach is credited by url, not by cohort
   const carrier = def.variable === 'metadata_carrier';
@@ -52,7 +53,7 @@ export function compareExperiment(db: Db, cat: Catalog, def: ExperimentDef, rang
         case 'page_reached': {
           const page = o.page ?? '';
           if (carrier) {
-            outcomes[o.id] = carrierReach(db, def, arm.id, page, range, synthetic);
+            outcomes[o.id] = carrierReach(db, def, arm.id, page, range, synthetic, active);
             break;
           }
           if (!ids.length) {
@@ -67,7 +68,7 @@ export function compareExperiment(db: Db, cat: Catalog, def: ExperimentDef, rang
         }
         case 'seconds_to_page': {
           const page = o.page ?? '';
-          const dts = carrier ? carrierLags(db, def, arm.id, page, range, synthetic) : ids.length ? timesToPage(db, ids, page) : [];
+          const dts = carrier ? carrierLags(db, def, arm.id, page, range, synthetic, active) : ids.length ? timesToPage(db, ids, page) : [];
           outcomes[o.id] = { n: dts.length, median_s: dts.length ? round(median(dts) / 1000) : null, p90_s: dts.length ? round(percentile(dts, 90) / 1000) : null };
           break;
         }
@@ -101,7 +102,7 @@ export function compareExperiment(db: Db, cat: Catalog, def: ExperimentDef, rang
   if (carrier) {
     out.tokens = Object.fromEntries(armTokens(def));
     out.unattributed = unattributedReaches(db, def, range, synthetic);
-    notes.push(`Each arm's carrier names the target with its own revision id (?${CARRIER_TOKEN_KEY}=). A fetch is credited to the arm whose id it carries, whichever actor makes it; exposed = sessions in the arm that were served the host page as html (a HEAD, a 304, an alternate or an action view shows no carrier), cross_actor = fetches by an actor that never saw the carrier itself.`);
+    notes.push(`Each arm's carrier names the target with its own revision id (?${CARRIER_TOKEN_KEY}=). A fetch is credited to the arm whose id it carries, whichever actor makes it; exposed = sessions in the arm that were served a page carrying the stimulus as html (${def.params?.host_page === '*' ? 'any article except the experiment targets' : 'the host page'}; a HEAD, a 304, an alternate or an action view shows no carrier), cross_actor = fetches by an actor that never saw the carrier itself.`);
     if (out.unattributed.sessions) notes.push(`${out.unattributed.sessions} session(s) fetched the target with no carrier id (its own history links, a guessed title, or a client that strips query strings); they count in no arm.`);
   }
   return out;
@@ -139,9 +140,38 @@ function eventSynth(synthetic: Synth): string {
 // swarm walks exactly those once its frontier runs dry, so counting them would inflate exposed
 const SHOWN = "method = 'GET' AND status = 200 AND resource_kind = 'page'";
 
-function exposures(db: Db, def: ExperimentDef, armId: string, range: Range, synthetic: Synth): { sessions: Set<string>; actors: Set<string> } {
-  const host = def.params?.host_page ?? '';
-  const rows = db.all<{ session_id: string; actor_hash: string }>(`SELECT DISTINCT session_id, actor_hash FROM events WHERE page_id = ? AND ${SHOWN} AND cohorts_json LIKE ? AND ts >= ? AND ts <= ?${eventSynth(synthetic)}`, host, `%"${def.id}":"${armId}"%`, range.since, range.until);
+// which page renders carried the stimulus, as sql on the events table. a single host page is one equality; "every
+// article" is every page render except the experiment targets; and host_page_history keeps earlier hosts in force
+// for the events before each `until`, so widening the host mid-run does not backdate exposures nobody had
+function hostClause(def: ExperimentDef, active: ExperimentDef[], col = ''): { sql: string; args: unknown[] } {
+  const segment = (host: string | undefined): { sql: string; args: unknown[] } => {
+    const h = carrierHosts(host, def, active);
+    if (!h.all) return { sql: `${col}page_id = ?`, args: [h.only ?? ''] };
+    if (!h.exclude.length) return { sql: `${col}page_id IS NOT NULL`, args: [] };
+    return { sql: `${col}page_id IS NOT NULL AND ${col}page_id NOT IN (${h.exclude.map(() => '?').join(', ')})`, args: h.exclude };
+  };
+  const history = [...(def.params?.host_page_history ?? [])].sort((a, b) => Date.parse(a.until) - Date.parse(b.until));
+  if (!history.length) return segment(def.params?.host_page);
+  const parts: string[] = [];
+  const args: unknown[] = [];
+  let from: number | null = null;
+  for (const entry of history) {
+    const until = Date.parse(entry.until);
+    const s = segment(entry.host_page);
+    parts.push(`(${from === null ? '' : `${col}ts >= ? AND `}${col}ts < ? AND ${s.sql})`);
+    if (from !== null) args.push(from);
+    args.push(until, ...s.args);
+    from = until;
+  }
+  const cur = segment(def.params?.host_page);
+  parts.push(`(${col}ts >= ? AND ${cur.sql})`);
+  args.push(from, ...cur.args);
+  return { sql: `(${parts.join(' OR ')})`, args };
+}
+
+function exposures(db: Db, def: ExperimentDef, armId: string, range: Range, synthetic: Synth, active: ExperimentDef[]): { sessions: Set<string>; actors: Set<string> } {
+  const host = hostClause(def, active);
+  const rows = db.all<{ session_id: string; actor_hash: string }>(`SELECT DISTINCT session_id, actor_hash FROM events WHERE ${host.sql} AND ${SHOWN} AND cohorts_json LIKE ? AND ts >= ? AND ts <= ?${eventSynth(synthetic)}`, ...host.args, `%"${def.id}":"${armId}"%`, range.since, range.until);
   return { sessions: new Set(rows.map((r) => r.session_id)), actors: new Set(rows.map((r) => r.actor_hash)) };
 }
 
@@ -149,8 +179,8 @@ function tokenLike(def: ExperimentDef, armId: string): string {
   return `%"${CARRIER_TOKEN_KEY}":"${armTokens(def).get(armId) ?? ''}"%`;
 }
 
-export function carrierReach(db: Db, def: ExperimentDef, armId: string, page: string, range: Range, synthetic: Synth): Record<string, unknown> {
-  const exp = exposures(db, def, armId, range, synthetic);
+export function carrierReach(db: Db, def: ExperimentDef, armId: string, page: string, range: Range, synthetic: Synth, active: ExperimentDef[] = [def]): Record<string, unknown> {
+  const exp = exposures(db, def, armId, range, synthetic, active);
   const hits = db.all<{ session_id: string; actor_hash: string }>(`SELECT DISTINCT session_id, actor_hash FROM events WHERE page_id = ? AND status < 400 AND query_json LIKE ? AND ts >= ? AND ts <= ?${eventSynth(synthetic)}`, page, tokenLike(def, armId), range.since, range.until);
   const same = hits.filter((h) => exp.actors.has(h.actor_hash)).length;
   const exposed = exp.sessions.size;
@@ -159,12 +189,12 @@ export function carrierReach(db: Db, def: ExperimentDef, armId: string, page: st
 }
 
 // ms from the arm's most recent exposure to each tagged fetch of the target: the handoff lag, across actors
-export function carrierLags(db: Db, def: ExperimentDef, armId: string, page: string, range: Range, synthetic: Synth): number[] {
-  const host = def.params?.host_page ?? '';
+export function carrierLags(db: Db, def: ExperimentDef, armId: string, page: string, range: Range, synthetic: Synth, active: ExperimentDef[] = [def]): number[] {
+  const host = hostClause(def, active, 'x.');
   const es = eventSynth(synthetic);
   const rows = db.all<{ ts: number; exposed_at: number | null }>(
-    `SELECT r.ts AS ts, (SELECT MAX(x.ts) FROM events x WHERE x.page_id = ? AND x.${SHOWN.replaceAll(' AND ', ' AND x.')} AND x.cohorts_json LIKE ? AND x.ts <= r.ts${es}) AS exposed_at FROM (SELECT session_id, MIN(ts) AS ts FROM events WHERE page_id = ? AND status < 400 AND query_json LIKE ? AND ts >= ? AND ts <= ?${es} GROUP BY session_id) r`,
-    host,
+    `SELECT r.ts AS ts, (SELECT MAX(x.ts) FROM events x WHERE ${host.sql} AND x.${SHOWN.replaceAll(' AND ', ' AND x.')} AND x.cohorts_json LIKE ? AND x.ts <= r.ts${es}) AS exposed_at FROM (SELECT session_id, MIN(ts) AS ts FROM events WHERE page_id = ? AND status < 400 AND query_json LIKE ? AND ts >= ? AND ts <= ?${es} GROUP BY session_id) r`,
+    ...host.args,
     `%"${def.id}":"${armId}"%`,
     page,
     tokenLike(def, armId),

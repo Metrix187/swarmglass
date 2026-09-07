@@ -39,7 +39,7 @@ Global experiments (004, 006, 009) are paused by default because only one may ru
 | `deprecation_flag` | `off` `on` | a loud superseded/deprecated banner and the `{{#deprecated}}` block |
 | `metadata_density` | `dense` `sparse` | OpenGraph, canonical, edit link, description, article tags, alternates footer, `og:see_also`, infobox rows |
 | `doc_language` | `terse` `verbose` | `{{#terse}}…{{/terse}}` vs `{{#verbose}}…{{/verbose}}` blocks in the page body |
-| `metadata_carrier` | `og_see_also` `fake_ns_see_also` `meta_content_url` `og_url` `og_image` `link_alternate` `link_canonical` `jsonld` `head_text` `html_comment` `none` | which single `<head>` carrier on `params.host_page` advertises the target's url; the target must be an `experiment` or `orphan` page. Reaching it records the carrier's class (`og_only`, `jsonld_only`, `link_only`, `comment_only`, `obscure`). The url carries a per-arm revision id (`?oldid=1xxxxx`; the mirror answers any revision id as a permalink), so a fetch is credited to the carrier that named it whichever actor fetches it |
+| `metadata_carrier` | `og_see_also` `fake_ns_see_also` `meta_content_url` `og_url` `og_image` `link_alternate` `link_canonical` `jsonld` `head_text` `html_comment` `none` | which single `<head>` carrier on `params.host_page` advertises the target's url; the target must be an `experiment` or `orphan` page. Reaching it records the carrier's class (`og_only`, `jsonld_only`, `link_only`, `comment_only`, `obscure`). The url carries a per-arm revision id (`?oldid=1xxxxx`; the mirror answers any revision id as a permalink), so a fetch is credited to the carrier that named it whichever actor fetches it. `params.host_page` may be `"*"`: the stimulus then rides on every article render except the target and the other active experiments' targets, and `params.host_page_history` records earlier hosts with the moment they stopped, so exposures are counted against what was actually shown |
 
 ## Assignment
 
@@ -63,7 +63,7 @@ The console shows the table with session *and actor* counts; the bundle and repo
 ## Adding an experiment
 
 1. Copy `config/experiments/_template.json` → `SGX-0NN-name.json`. Increment the number; never reuse one.
-2. Pick one variable. For `link_visibility`, the target page must have `discover: experiment` in its frontmatter (unlinked, no channels) and `params.host_page` must exist; for `metadata_carrier` the target may also be `discover: orphan`. `npm run seed:check` enforces both.
+2. Pick one variable. For `link_visibility`, the target page must have `discover: experiment` in its frontmatter (unlinked, no channels) and `params.host_page` must exist (or be `"*"` for `metadata_carrier`); for `metadata_carrier` the target may also be `discover: orphan`. `npm run seed:check` enforces both.
 3. Write the hypothesis in one sentence and list outcomes you will look at *before* activating.
 4. `status: "active"`, restart (or `docker compose up -d`). The definition is frozen into `experiment_runs`.
 5. Note the activation in `CHANGELOG.md` with the date.
