@@ -19,6 +19,7 @@ export interface SwarmSession {
   ua: string | null;
   n_requests: number;
   n_subresources: number;
+  n_conditional: number; // requests carrying If-None-Match / If-Modified-Since
   synthetic: boolean;
   pages: Set<string>;
 }
@@ -32,6 +33,7 @@ export interface SwarmSummary {
   prefixes16: number;
   single_hit_share: number;
   asset_share: number;
+  conditional_share: number;
   pages: number;
   first_seen: number;
   last_seen: number;
@@ -69,6 +71,7 @@ export function detectSwarms(sessions: SwarmSession[]): Swarm[] {
     const requests = members.reduce((a, m) => a + m.n_requests, 0);
     const assets = members.reduce((a, m) => a + m.n_subresources, 0);
     const assetShare = requests ? assets / requests : 0;
+    const conditional = members.reduce((a, m) => a + m.n_conditional, 0);
     // real phones fetch the stylesheet. this is the line between "many people once" and "one thing, many masks"
     if (assetShare > 0.05) continue;
 
@@ -118,6 +121,7 @@ export function detectSwarms(sessions: SwarmSession[]): Swarm[] {
         prefixes16,
         single_hit_share: Math.round(single * 100) / 100,
         asset_share: Math.round(assetShare * 1000) / 1000,
+        conditional_share: requests ? Math.round((conditional / requests) * 1000) / 1000 : 0,
         pages: union.size,
         first_seen: first,
         last_seen: last,
@@ -145,5 +149,7 @@ export function loadSwarmSessions(db: Db, sinceMs: number, limit = 6000): SwarmS
     if (set) set.add(p.page_id);
     else pages.set(p.session_id, new Set([p.page_id]));
   }
-  return rows.map((r) => ({ ...r, synthetic: Boolean(r.synthetic), pages: pages.get(r.id) ?? new Set<string>() }));
+  const cond = new Map<string, number>();
+  for (const c of db.all<{ session_id: string; n: number }>("SELECT session_id, COUNT(*) AS n FROM events WHERE ts >= ? AND (header_names LIKE '%if-none-match%' OR header_names LIKE '%if-modified-since%') GROUP BY session_id", sinceMs)) cond.set(c.session_id, c.n);
+  return rows.map((r) => ({ ...r, synthetic: Boolean(r.synthetic), n_conditional: cond.get(r.id) ?? 0, pages: pages.get(r.id) ?? new Set<string>() }));
 }

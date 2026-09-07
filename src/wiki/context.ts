@@ -32,6 +32,7 @@ export interface ReqCtx {
   // experiment-driven link injection
   injected(hostPageId: string): { visible: string; comment: string };
   shallowLinks(): string;
+  carriers(hostPageId: string): string; // SGX-011: head markup advertising a target through one metadata carrier
   channelTargets(channel: 'robots' | 'sitemap' | 'feed'): Page[];
   exposures: Canary[];
 }
@@ -44,6 +45,40 @@ const LV_TO_DISCOVER: Record<string, DiscoverClass> = {
   feed_only: 'feed_only',
   none: 'experiment',
 };
+
+// what reaching a metadata_carrier target says about the client, by the carrier it was shown
+const MC_TO_DISCOVER: Record<string, DiscoverClass> = {
+  og_see_also: 'og_only',
+  og_url: 'og_only',
+  og_image: 'og_only',
+  jsonld: 'jsonld_only',
+  link_alternate: 'link_only',
+  link_canonical: 'link_only',
+  html_comment: 'comment_only',
+  fake_ns_see_also: 'obscure',
+  meta_content_url: 'obscure',
+  head_text: 'obscure',
+  none: 'orphan',
+};
+
+// the stimulus for one arm of a metadata_carrier experiment: exactly one way of saying "this url exists".
+// the fake namespace and the bare meta name are made up on purpose; only a url miner follows those
+export function carrierMarkup(value: string, url: string, comment = 'related:'): string {
+  const u = esc(url);
+  switch (value) {
+    case 'og_see_also': return `<meta property="og:see_also" content="${u}" />`;
+    case 'fake_ns_see_also': return `<meta property="antfarm:see_also" content="${u}" />`;
+    case 'meta_content_url': return `<meta name="antfarm-related" content="${u}" />`;
+    case 'og_url': return `<meta property="og:url" content="${u}" />`;
+    case 'og_image': return `<meta property="og:image" content="${u}" />`;
+    case 'link_alternate': return `<link rel="alternate" type="text/html" href="${u}" />`;
+    case 'link_canonical': return `<link rel="canonical" href="${u}" />`;
+    case 'jsonld': return `<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","relatedLink":["${u}"]}</script>`;
+    case 'head_text': return u;
+    case 'html_comment': return `<!-- ${esc(comment)} ${u} -->`;
+    default: return '';
+  }
+}
 
 export function reqCtx(deps: WikiDeps, req: Req): ReqCtx {
   let session = req.state.session as SessionState | undefined;
@@ -92,6 +127,7 @@ export function reqCtx(deps: WikiDeps, req: Req): ReqCtx {
       let discover = page.discover;
       let depth = page.depth;
       if (ov.link_visibility) discover = LV_TO_DISCOVER[ov.link_visibility] ?? discover;
+      if (ov.metadata_carrier) discover = MC_TO_DISCOVER[ov.metadata_carrier] ?? discover;
       if (ov.link_depth) depth = ov.link_depth === 'shallow' ? 1 : page.depth;
       return { discover, depth };
     },
@@ -112,6 +148,20 @@ export function reqCtx(deps: WikiDeps, req: Req): ReqCtx {
         }
       }
       return { visible, comment };
+    },
+    carriers(hostPageId) {
+      let html = '';
+      for (const d of deps.registry.active()) {
+        if (d.variable !== 'metadata_carrier' || d.params?.host_page !== hostPageId) continue;
+        const armDef = d.arms.find((a) => a.id === assignment.cohorts[d.id]);
+        if (!armDef) continue;
+        for (const t of d.targets) {
+          if (!deps.cat.pages.has(t)) continue;
+          const m = carrierMarkup(armDef.value, `${deps.cfg.public.baseUrl}${wikiHref(bp, t)}`, d.params?.comment_text);
+          if (m) html += m + '\n';
+        }
+      }
+      return html;
     },
     shallowLinks() {
       let html = '';

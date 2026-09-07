@@ -344,7 +344,7 @@ ${lastmod}
 `;
 }
 
-export function renderArticle(ctx: RenderCtx, page: Page, opts: { redirectedFrom?: string; titleOverride?: string; extraHtml?: string; noticeHtml?: string } = {}): PageRender {
+export function renderArticle(ctx: RenderCtx, page: Page, opts: { redirectedFrom?: string; titleOverride?: string; extraHtml?: string; noticeHtml?: string; headExtra?: string } = {}): PageRender {
   const hooks = hooksFor(ctx, page);
   const md = renderMarkdown(page.body, hooks);
   const dense = ctx.variables.metadata_density === 'dense';
@@ -379,7 +379,7 @@ export function renderArticle(ctx: RenderCtx, page: Page, opts: { redirectedFrom
     contentSub: opts.redirectedFrom ? `(Redirected from <a href="${ctx.basePath}${wikiHref('', opts.redirectedFrom)}?redirect=no" title="${esc(opts.redirectedFrom)}">${esc(opts.redirectedFrom.replace(/_/g, ' '))}</a>)` : '',
     categories: page.categories,
     lastModified: Date.parse(page.modified + 'T14:03:00Z'),
-    headExtra: pageHead(page, ctx, { title, noindex: page.noindex }),
+    headExtra: pageHead(page, ctx, { title, noindex: page.noindex }) + (opts.headExtra ? '\n' + opts.headExtra : ''),
     selectedTab: page.kind === 'talk' ? 'talk' : 'page',
     noindex: page.noindex,
     printfooterPath: wikiHref(ctx.basePath, page.id),

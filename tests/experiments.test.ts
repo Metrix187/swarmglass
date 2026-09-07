@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import { ExperimentRegistry, pickArm, validateExperiment, variablesFor, type ExperimentDef } from '../src/experiments/registry.ts';
+import { carrierMarkup } from '../src/wiki/context.ts';
 
 const def: ExperimentDef = {
   id: 'SGX-099',
@@ -63,4 +64,23 @@ test('conflicting experiments are reported', () => {
   reg.defs.push(def, { ...def, id: 'SGX-098', variable: 'title_style', arms: [{ id: 'A', label: 'a', weight: 1, value: 'neutral' }] });
   const errs = reg.checkConflicts();
   assert.ok(errs.some((e) => e.includes('Some_Page')));
+});
+
+test('metadata carriers: each arm says the url exactly one way, and SGX-011 ships active', () => {
+  const url = 'https://example.test/wiki/Backup_2014_Restore_Notes';
+  const seen = new Set<string>();
+  for (const v of ['og_see_also', 'fake_ns_see_also', 'meta_content_url', 'og_url', 'og_image', 'link_alternate', 'link_canonical', 'jsonld', 'head_text', 'html_comment']) {
+    const m = carrierMarkup(v, url);
+    assert.ok(m.includes(url), v);
+    assert.ok(!seen.has(m), `${v} duplicates another carrier`);
+    seen.add(m);
+  }
+  assert.equal(carrierMarkup('none', url), '');
+  assert.ok(carrierMarkup('og_see_also', url).startsWith('<meta property="og:see_also"'));
+  assert.ok(carrierMarkup('html_comment', url, 'moved:').startsWith('<!-- moved:'));
+  assert.equal(carrierMarkup('head_text', url), url);
+  const reg = ExperimentRegistry.load(join(process.cwd(), 'config', 'experiments'));
+  const sgx = reg.get('SGX-011');
+  assert.ok(sgx && sgx.status === 'active' && sgx.arms.length === 11, 'SGX-011 shipped and active');
+  assert.equal(variablesFor(reg.assign('actor-x', 'sess-x'), 'Backup_2014_Restore_Notes').metadata_carrier !== undefined, true);
 });

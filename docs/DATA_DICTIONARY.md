@@ -73,6 +73,7 @@ Computed by `computeFeatures()` in `src/telemetry/features.ts` from the session'
 | `negotiated_nonhtml` | responses served as non-html by negotiation |
 | `internal_referer_share` | page requests carrying a same-site referer |
 | `query_usage`, `query_foreign` | requests with any query parameters; non-asset requests carrying a key the site never emits (the visitor's own idea; the skin's `?<hash>` on css/js is excluded) |
+| `conditional_share`, `n_304` | share of requests carrying `If-None-Match` or `If-Modified-Since`; responses answered 304 (the client already held the document) |
 
 ### canaries
 

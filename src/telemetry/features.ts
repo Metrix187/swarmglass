@@ -218,6 +218,10 @@ export function computeFeatures(session: SessionRow, events: EventRow[], pageInf
     const q = parseQuery(e.query_json);
     return q !== null && !isFurniture(q);
   }).length;
+  // a client that revalidates has a copy of the document somewhere: If-None-Match / If-Modified-Since on the
+  // way in, 304 on the way out. a crawler that never does is re-fetching blind
+  f.conditional_share = n ? ev.filter((e) => hasConditional(e)).length / n : 0;
+  f.n_304 = ev.filter((e) => e.status === 304).length;
 
   // ---- canaries ----
   let exposed = 0;
@@ -291,7 +295,7 @@ export function computeFeatures(session: SessionRow, events: EventRow[], pageInf
   let redirectsHit = 0;
   for (let i = 0; i < n; i++) {
     const e = ev[i] as EventRow;
-    if (e.status >= 300 && e.status < 400) {
+    if (e.status >= 300 && e.status < 400 && e.status !== 304) {
       redirectsHit++;
       const next = ev[i + 1];
       if (next && next.ts - e.ts < 5000) followed++;
@@ -304,6 +308,11 @@ export function computeFeatures(session: SessionRow, events: EventRow[], pageInf
   const firstKinds = kinds.slice(0, 3);
   f.machine_first = firstKinds.some((k) => k in CHANNEL_KINDS);
   return f;
+}
+
+export function hasConditional(e: Pick<EventRow, 'header_names'>): boolean {
+  const names = `,${e.header_names ?? ''},`;
+  return names.includes(',if-none-match,') || names.includes(',if-modified-since,');
 }
 
 function peakRate(ts: number[], windowMs: number): number {

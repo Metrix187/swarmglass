@@ -41,6 +41,18 @@ for (const d of reg.defs) {
   if (d.params?.host_page && !cat.pages.has(d.params.host_page)) problems.push(`${d.id}: host_page ${d.params.host_page} does not exist`);
 }
 for (const d of reg.defs) for (const t of d.targets) if (!cat.pages.has(t)) problems.push(`${d.id}: target ${t} does not exist`);
+// metadata_carrier targets: the only pointer may be the carrier itself, so the page has to start unreachable
+for (const d of reg.defs) {
+  if (d.variable !== 'metadata_carrier') continue;
+  for (const t of d.targets) {
+    const page = cat.pages.get(t);
+    if (!page) continue;
+    if (page.discover !== 'experiment' && page.discover !== 'orphan') problems.push(`${d.id}: target ${t} has discover=${page.discover}; a metadata_carrier target must be an experiment or orphan page`);
+    for (const p of cat.pages.values()) if (p.links.some((l) => resolveAlias(cat.pages, l) === t)) problems.push(`${d.id}: ${p.id} links to target ${t} in visible prose`);
+  }
+  if (!d.params?.host_page) problems.push(`${d.id}: metadata_carrier needs params.host_page`);
+  else if (!cat.pages.has(d.params.host_page)) problems.push(`${d.id}: host_page ${d.params.host_page} does not exist`);
+}
 problems.push(...reg.errors);
 
 for (const a of cat.attachments.values()) if (!a.body.includes('{{canary}}')) warnings.push(`attachment ${a.name}: no {{canary}} placeholder`);

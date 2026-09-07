@@ -15,6 +15,9 @@ export const VARIABLES = {
   deprecation_flag: ['on', 'off'],
   metadata_density: ['sparse', 'dense'],
   doc_language: ['terse', 'verbose'],
+  // which head metadata carrier advertises a target url on the host page. tells a semantic open graph reader
+  // from a generic "anything url-shaped in content=" miner from a structured-document ingester (SGX-011)
+  metadata_carrier: ['og_see_also', 'fake_ns_see_also', 'meta_content_url', 'og_url', 'og_image', 'link_alternate', 'link_canonical', 'jsonld', 'head_text', 'html_comment', 'none'],
 } as const;
 
 export type VariableName = keyof typeof VARIABLES;
@@ -31,6 +34,7 @@ export const DEFAULTS: Record<VariableName, VariableValue> = {
   deprecation_flag: 'off',
   metadata_density: 'dense',
   doc_language: 'terse',
+  metadata_carrier: 'none',
 };
 
 // variables that only make sense site-wide (they don't attach to one page)
@@ -68,7 +72,7 @@ export interface ExperimentDef {
   owner?: string;
   notes?: string;
   fiction_map?: Record<string, string>; // public fictional element -> what it is for
-  // link_visibility experiments say where the visible/obscure link is injected and what it says
+  // link_visibility and metadata_carrier experiments say which page hosts the stimulus and what it says
   params?: { host_page?: string; anchor_text?: string; comment_text?: string };
 }
 

@@ -1,5 +1,6 @@
 import { readFileSync, existsSync, statSync } from 'node:fs';
 import { join, normalize } from 'node:path';
+import { createHash } from 'node:crypto';
 import { Router, htmlRes, json, redirect, text, type Req, type Res } from '../http/server.ts';
 import { negotiate } from '../http/negotiate.ts';
 import { esc, pageHref } from '../http/html.ts';
@@ -26,7 +27,31 @@ function withMeta(res: Res, meta: ResMeta): Res {
 
 function done(ctx: ReqCtx, res: Res, meta: ResMeta, req: Req, deps: WikiDeps): Res {
   const robots = isRobotsDisallowed(req.fullPath, deps.cat, ctx.channelTargets('robots'));
-  return withMeta(res, { ...meta, canaries: ctx.exposures, robotsDisallowed: robots });
+  return withMeta(revalidate(req, res, meta, deps), { ...meta, canaries: ctx.exposures, robotsDisallowed: robots });
+}
+
+// stable documents get an ETag and a Last-Modified, and a 304 when the client already holds the current bytes.
+// the request is seen and recorded either way; only the body changes. a crawler that revalidates has a document
+// store behind it, one that never does is re-fetching blind (F-001). specials churn, so they stay untagged
+const REVALIDATABLE = new Set(['page', 'alt', 'attachment']);
+function revalidate(req: Req, res: Res, meta: ResMeta, deps: WikiDeps): Res {
+  if (res.status !== 200 || !REVALIDATABLE.has(meta.kind ?? '') || (req.method !== 'GET' && req.method !== 'HEAD')) return res;
+  // the footer comment carries the render time ("Served by mirror node 2 in 0.034 secs"); hash without it, or
+  // no two fetches ever match and the whole thing is theatre
+  const stable = typeof res.body === 'string' ? res.body.replace(/ in \d+\.\d+ secs\./, ' in 0.000 secs.') : res.body;
+  const etag = `"${createHash('sha256').update(stable).digest('hex').slice(0, 20)}"`;
+  const page = meta.pageId ? deps.cat.pages.get(meta.pageId) : undefined;
+  // same fictional clock as the page footer
+  const modified = page ? Date.parse(`${page.modified}T14:03:00Z`) : NaN;
+  res.headers['etag'] = etag;
+  if (!Number.isNaN(modified)) res.headers['last-modified'] = new Date(modified).toUTCString();
+  if (!res.headers['cache-control']) res.headers['cache-control'] = 'public, max-age=0, must-revalidate';
+  const inm = req.headers['if-none-match'];
+  const ims = req.headers['if-modified-since'];
+  const tagMatch = inm ? inm.split(',').some((t) => t.trim() === '*' || t.trim().replace(/^W\//, '') === etag) : false;
+  const dateMatch = !inm && ims && !Number.isNaN(modified) ? Date.parse(ims) >= modified : false;
+  if (!tagMatch && !dateMatch) return res;
+  return { ...res, status: 304, body: '' };
 }
 
 function cacheHeaders(seconds: number): Record<string, string> {
@@ -353,10 +378,11 @@ function pageDispatch(deps: WikiDeps, req: Req): Res {
   // ---- html ----
   const injected = ctx.injected(page.id);
   const extraHtml = injected.visible + injected.comment + (page.id === cat.main ? ctx.shallowLinks() : '');
+  const headExtra = ctx.carriers(page.id);
   let noticeHtml = '';
   if (req.query.get('oldid')) noticeHtml = `<div class="mw-revision small" style="border:1px solid #aaa;background:#f9f9f9;padding:.4em;margin-bottom:1em">This is an <b>old revision</b> of this page, as archived. The mirror serves the archived text for every revision id.</div>`;
   const redirectedFrom = req.query.get('redirectedfrom') ?? (pid !== rest ? rest : undefined);
-  const out = renderArticle(r, page, { extraHtml, noticeHtml, redirectedFrom: redirectedFrom ?? undefined });
+  const out = renderArticle(r, page, { extraHtml, headExtra, noticeHtml, redirectedFrom: redirectedFrom ?? undefined });
   return done(ctx, htmlRes(200, out.html, { ...out.headers, ...vary, 'cache-control': 'public, max-age=300' }), pm({ kind: page.kind === 'talk' ? 'page' : 'page', negotiated: 'html' }), req, deps);
 }
 

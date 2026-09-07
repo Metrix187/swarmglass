@@ -1,4 +1,4 @@
-import type { EventRow, Features } from '../telemetry/features.ts';
+import { hasConditional, type EventRow, type Features } from '../telemetry/features.ts';
 import type { Scores } from '../telemetry/scoring.ts';
 import { fmtDuration } from '../util/time.ts';
 import { canonicalQuery, compactQuery, isFurniture, parseQuery, type Query } from '../telemetry/query.ts';
@@ -127,7 +127,11 @@ export function buildStory(events: EventRow[], features: Features | null, scores
       flags.push('write');
       notes.push(`attempted a ${e.method} (read-only mirror answered ${e.status})`);
     }
-    if (e.status >= 300 && e.status < 400) {
+    if (hasConditional(e)) {
+      flags.push('conditional');
+      notes.push(e.status === 304 ? 'revalidated with a conditional request; nothing had changed, answered 304' : 'sent a conditional request (If-None-Match / If-Modified-Since): it had a copy already');
+    }
+    if (e.status >= 300 && e.status < 400 && e.status !== 304) {
       flags.push('redirect');
       pendingRedirect = { n, ts: e.ts };
     } else if (pendingRedirect && e.ts - pendingRedirect.ts < 5000 && e.status < 400) {

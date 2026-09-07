@@ -1,0 +1,42 @@
+{
+  "id": "SGX-011",
+  "name": "metadata-carrier",
+  "version": 1,
+  "status": "active",
+  "hypothesis": "A crawler that reached an og:see_also-only page either understands Open Graph or harvests any url-shaped metadata. Advertising an otherwise unlinked page through exactly one head carrier per actor separates a semantic Open Graph reader (og:see_also only) from a generic attribute miner (any content= url) from a structured-document ingester (canonical, alternate and JSON-LD as well).",
+  "variable": "metadata_carrier",
+  "scope": "targets",
+  "targets": ["Backup_2014_Restore_Notes"],
+  "params": {
+    "host_page": "Main_Page",
+    "comment_text": "svanterpool 2014-04: restore notes, never filed:"
+  },
+  "arms": [
+    { "id": "A", "label": "og:see_also", "weight": 1, "value": "og_see_also", "note": "the real Open Graph relationship property" },
+    { "id": "B", "label": "fake-namespace see_also", "weight": 1, "value": "fake_ns_see_also", "note": "antfarm:see_also, a property no standard defines" },
+    { "id": "C", "label": "arbitrary meta content url", "weight": 1, "value": "meta_content_url", "note": "meta name=antfarm-related with a url in content=" },
+    { "id": "D", "label": "og:url", "weight": 1, "value": "og_url", "note": "a second og:url pointing at the target" },
+    { "id": "E", "label": "og:image", "weight": 1, "value": "og_image", "note": "og:image whose url is an html page" },
+    { "id": "F", "label": "link rel=alternate", "weight": 1, "value": "link_alternate", "note": "link rel=alternate type=text/html" },
+    { "id": "G", "label": "link rel=canonical", "weight": 1, "value": "link_canonical", "note": "a second canonical pointing at the target" },
+    { "id": "H", "label": "json-ld relatedLink", "weight": 1, "value": "jsonld", "note": "schema.org WebPage relatedLink in a second JSON-LD block" },
+    { "id": "I", "label": "bare text in head", "weight": 1, "value": "head_text", "note": "the url as a text node inside head, no element at all" },
+    { "id": "J", "label": "html comment", "weight": 1, "value": "html_comment", "note": "the url inside an html comment in head" },
+    { "id": "K", "label": "no carrier (control)", "weight": 1, "value": "none", "note": "the page exists and nothing points at it" }
+  ],
+  "assignment": { "unit": "actor", "salt": "SGX-011-metadata-carrier-2026-09" },
+  "outcomes": [
+    { "id": "reached", "metric": "page_reached", "page": "Backup_2014_Restore_Notes", "description": "fraction of sessions in the arm that fetched the target" },
+    { "id": "time_to_reach", "metric": "seconds_to_page", "page": "Backup_2014_Restore_Notes", "description": "seconds from session start to first fetch of the target" },
+    { "id": "alt", "metric": "alt_requested", "page": "Backup_2014_Restore_Notes", "description": "sessions that also took the text alternate" },
+    { "id": "classes", "metric": "class_mix" }
+  ],
+  "seed_version": "2026.09.0",
+  "created": "2026-09-07",
+  "owner": "sky",
+  "fiction_map": {
+    "Backup_2014_Restore_Notes": "experiment target; an orphan ops page that says it was never filed",
+    "antfarm:see_also / antfarm-related": "arm B and C stimuli: metadata no standard defines, so only a url miner follows them",
+    "second og:url / canonical on Main_Page": "arm D and G stimuli"
+  }
+}

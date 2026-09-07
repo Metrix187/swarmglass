@@ -4,7 +4,7 @@
   "version": 1,
   "status": "draft",
   "hypothesis": "One sentence. What you expect to differ between arms, and why.",
-  "variable": "one of: link_visibility | structured_data | title_style | canary_mode | link_depth | manifest_visibility | representation | deprecation_flag | metadata_density | doc_language",
+  "variable": "one of: link_visibility | structured_data | title_style | canary_mode | link_depth | manifest_visibility | representation | deprecation_flag | metadata_density | doc_language | metadata_carrier",
   "scope": "targets (one page) or global (canary_mode, manifest_visibility, metadata_density only)",
   "targets": ["Page_Id"],
   "params": { "host_page": "only for link_visibility: where the visible/obscure link is injected", "anchor_text": "link text" },

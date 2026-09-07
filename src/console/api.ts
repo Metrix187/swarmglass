@@ -1,5 +1,5 @@
 import type { Db } from '../db/db.ts';
-import type { Catalog } from '../wiki/content.ts';
+import { resolveAlias, type Catalog } from '../wiki/content.ts';
 import type { ExperimentRegistry } from '../experiments/registry.ts';
 import type { EventRow, Features } from '../telemetry/features.ts';
 import type { Scores } from '../telemetry/scoring.ts';
@@ -249,7 +249,63 @@ export function clusterDetail(d: QueryDeps, id: string): Record<string, unknown>
       (pageMatrix[p.page_id] ??= []).push(String(m.id));
     }
   }
-  return { ...r, signals: JSON.parse(r.signals_json), summary: parseSummary(r.summary_json), summary_json: undefined, members, page_matrix: pageMatrix };
+  const metrics = r.kind === 'swarm' ? swarmMetrics(d, id) : null;
+  return { ...r, signals: JSON.parse(r.signals_json), summary: parseSummary(r.summary_json), summary_json: undefined, members, page_matrix: pageMatrix, metrics };
+}
+
+// the three curves F-001 asked for: does the pool run out of new pages, which pages does it come back to and how
+// often, and how long after it last saw a page linking to X does it fetch X
+function swarmMetrics(d: QueryDeps, clusterId: string): Record<string, unknown> {
+  const rows = d.db.all<{ ts: number; page_id: string }>('SELECT e.ts, e.page_id FROM events e JOIN sessions s ON s.id = e.session_id WHERE s.cluster_id = ? AND e.page_id IS NOT NULL AND e.status < 400 ORDER BY e.ts ASC LIMIT 20000', clusterId);
+  const seen = new Set<string>();
+  const hours = new Map<number, { hour: number; requests: number; fresh: number }>();
+  const fetches = new Map<string, number[]>();
+  for (const r of rows) {
+    const h = Math.floor(r.ts / 3_600_000) * 3_600_000;
+    const cell = hours.get(h) ?? { hour: h, requests: 0, fresh: 0 };
+    cell.requests++;
+    if (!seen.has(r.page_id)) {
+      seen.add(r.page_id);
+      cell.fresh++;
+    }
+    hours.set(h, cell);
+    const list = fetches.get(r.page_id);
+    if (list) list.push(r.ts);
+    else fetches.set(r.page_id, [r.ts]);
+  }
+  const revisits = [...fetches.entries()]
+    .filter(([, ts]) => ts.length > 1)
+    .map(([page, ts]) => {
+      const gaps: number[] = [];
+      for (let i = 1; i < ts.length; i++) gaps.push((ts[i] as number) - (ts[i - 1] as number));
+      return { page, fetches: ts.length, median_gap_ms: median(gaps), last_ts: ts[ts.length - 1] };
+    })
+    .sort((a, b) => b.fetches - a.fetches)
+    .slice(0, 40);
+  // parents from the seed's link graph: pages whose visible prose links to X
+  const parents = new Map<string, string[]>();
+  for (const p of d.cat.pages.values()) {
+    for (const l of p.links) {
+      const id = resolveAlias(d.cat.pages, l) ?? l;
+      const arr = parents.get(id);
+      if (arr) arr.push(p.id);
+      else parents.set(id, [p.id]);
+    }
+  }
+  const lags: Array<{ page: string; lag_ms: number; parent: string }> = [];
+  for (const [page, ts] of fetches) {
+    const first = ts[0] as number;
+    let best: { t: number; parent: string } | null = null;
+    for (const parent of parents.get(page) ?? []) for (const t of fetches.get(parent) ?? []) if (t < first && (!best || t > best.t)) best = { t, parent };
+    if (best) lags.push({ page, lag_ms: first - best.t, parent: best.parent });
+  }
+  lags.sort((a, b) => a.lag_ms - b.lag_ms);
+  const ms = lags.map((l) => l.lag_ms);
+  return {
+    saturation: [...hours.values()].sort((a, b) => a.hour - b.hour),
+    revisits,
+    frontier: { n: lags.length, p25_ms: ms.length ? percentile(ms, 25) : null, median_ms: ms.length ? median(ms) : null, p75_ms: ms.length ? percentile(ms, 75) : null, samples: lags.slice(0, 20) },
+  };
 }
 
 export function pageFunnel(d: QueryDeps, range: Range, synthetic: 'real' | 'synthetic' | 'all'): Array<Record<string, unknown>> {

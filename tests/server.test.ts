@@ -338,3 +338,22 @@ test('report generation writes a sanitized publication folder', async () => {
   assert.ok(md.includes('## Experiment SGX-001'));
   assert.ok(!md.includes('127.0.0'));
 });
+
+test('stable documents carry an ETag and answer 304 to a matching If-None-Match', async () => {
+  const r1 = await get('/wiki/Main_Page');
+  assert.equal(r1.status, 200);
+  const etag = r1.headers.get('etag');
+  assert.ok(etag && etag.startsWith('"'), 'etag present');
+  assert.ok(r1.headers.get('last-modified'), 'last-modified present');
+  assert.ok(await r1.text());
+  const r2 = await get('/wiki/Main_Page', { headers: { 'if-none-match': etag as string } });
+  assert.equal(r2.status, 304);
+  assert.equal((await r2.text()).length, 0);
+  const r3 = await get('/wiki/Main_Page', { headers: { 'if-none-match': '"nope"' } });
+  assert.equal(r3.status, 200);
+  await r3.text();
+  // specials churn and never get a tag
+  const r4 = await get('/wiki/Special:RecentChanges');
+  assert.equal(r4.headers.get('etag'), null);
+  await r4.text();
+});

@@ -239,7 +239,7 @@ test('features + story: query keys the site never emits are foreign, and the sum
 
 test('swarm detector: one client signature across many addresses, one hit each', () => {
   // modelled on the iphone-13.2.3 pool: a fresh /24 every ten minutes, one page each, never a stylesheet
-  const mk = (i: number, extra: Partial<SwarmSession> = {}): SwarmSession => ({ id: 's' + i, started_at: i * 600_000, last_seen_at: i * 600_000 + 100, ip_trunc: `43.${130 + (i % 20)}.${i}.0/24`, ua_hash: 'ua1', ua_family: 'safari', ua: 'Mozilla/5.0 (iPhone; CPU iPhone OS 13_2_3 like Mac OS X)', n_requests: 1, n_subresources: 0, synthetic: false, pages: new Set(['P' + i]), ...extra });
+  const mk = (i: number, extra: Partial<SwarmSession> = {}): SwarmSession => ({ id: 's' + i, started_at: i * 600_000, last_seen_at: i * 600_000 + 100, ip_trunc: `43.${130 + (i % 20)}.${i}.0/24`, ua_hash: 'ua1', ua_family: 'safari', ua: 'Mozilla/5.0 (iPhone; CPU iPhone OS 13_2_3 like Mac OS X)', n_requests: 1, n_subresources: 0, n_conditional: 0, synthetic: false, pages: new Set(['P' + i]), ...extra });
   const swarms = detectSwarms(Array.from({ length: 30 }, (_, i) => mk(i)));
   assert.equal(swarms.length, 1);
   const s = swarms[0]!;
@@ -248,6 +248,7 @@ test('swarm detector: one client signature across many addresses, one hit each',
   for (const sig of ['many_prefixes_one_client', 'one_hit_per_address', 'never_rendered', 'sustained_trickle', 'partitioned_coverage']) assert.ok(s.signals.some((x) => x.signal === sig), `missing ${sig}`);
   assert.equal(s.summary.prefixes, 30);
   assert.equal(s.summary.pages, 30);
+  assert.equal(s.summary.conditional_share, 0);
   assert.ok(s.swarm_score >= 0.6, `score ${s.swarm_score}`);
   // same input, same id: links in notes have to survive the five-minute rebuild
   assert.equal(detectSwarms(Array.from({ length: 30 }, (_, i) => mk(i)))[0]!.id, s.id);
@@ -279,4 +280,21 @@ test('features + heuristics: a browser string that sends Pragma on every request
   const real = computeFeatures(sess, [...events.map((e) => ({ ...e, header_names: quiet })), ev({ ts: 300, path: '/skins/antfarm/main.css', page_id: null, resource_kind: 'asset', header_names: quiet })], pageInfo);
   assert.equal(real.pragma_share, 0);
   assert.ok(!score(h, real).class_evidence.human_browser!.some((e) => e.rule === 'pragma_no_render'));
+});
+
+test('features + story: a 304 is a revalidation, not a redirect', () => {
+  const events: EventRow[] = [
+    ev({ ts: 0, page_id: 'A', path: '/wiki/A' }),
+    ev({ ts: 1000, page_id: 'A', path: '/wiki/A', status: 304, header_names: 'host,user-agent,accept,if-none-match' }),
+    ev({ ts: 2000, page_id: 'B', path: '/wiki/B', header_names: 'host,user-agent,accept,if-modified-since' }),
+  ];
+  const f = computeFeatures(session, events, pageInfo);
+  assert.equal(f.n_304, 1);
+  assert.ok(Math.abs((f.conditional_share as number) - 2 / 3) < 0.01);
+  assert.equal(f.redirects_hit, 0);
+  const story = buildStory(events, f, null, { uaFamily: 'curl', cookieReturned: false, synthetic: false });
+  assert.ok(!story.steps[1]!.flags.includes('redirect'));
+  assert.ok(story.steps[1]!.flags.includes('conditional'));
+  assert.ok(story.steps[1]!.notes.some((n) => n.includes('answered 304')), story.steps[1]!.notes.join(' | '));
+  assert.ok(story.steps[2]!.notes.some((n) => n.includes('had a copy already')));
 });

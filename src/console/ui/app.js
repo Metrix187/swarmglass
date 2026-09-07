@@ -281,7 +281,7 @@
     }
   };
   function swarmShape(s) {
-    return kv({ sessions: s.sessions, requests: s.requests, 'network prefixes': `${s.prefixes} (${s.prefixes16} wider blocks)`, 'one-or-two-request sessions': pct(s.single_hit_share), 'asset share': pct(s.asset_share), 'pages touched': s.pages, 'a new address every': s.median_start_gap_ms ? fmtRel(s.median_start_gap_ms) : '—', 'first seen': s.first_seen ? fmtTs(s.first_seen) : '—', 'last seen': s.last_seen ? fmtTs(s.last_seen) : '—' });
+    return kv({ sessions: s.sessions, requests: s.requests, 'network prefixes': `${s.prefixes} (${s.prefixes16} wider blocks)`, 'one-or-two-request sessions': pct(s.single_hit_share), 'asset share': pct(s.asset_share), 'conditional requests (If-None-Match etc.)': pct(s.conditional_share), 'pages touched': s.pages, 'a new address every': s.median_start_gap_ms ? fmtRel(s.median_start_gap_ms) : '—', 'first seen': s.first_seen ? fmtTs(s.first_seen) : '—', 'last seen': s.last_seen ? fmtTs(s.last_seen) : '—' });
   }
   views.cluster = async (root, params, id) => {
     const d = await api(`/api/clusters/${encodeURIComponent(id)}`);
@@ -295,6 +295,10 @@
       // a 96-column matrix says nothing; for a swarm the question is which pages the pool was handed
       root.appendChild(card('shape', swarmShape(d.summary || {})));
       root.appendChild(card('pages touched, and by how many members', table([{ label: 'page', render: (r) => pageLink(r.page) }, { label: 'members', key: 'n', num: true }], pages.map((p) => ({ page: p, n: d.page_matrix[p].length })).sort((a, b) => b.n - a.n))));
+      const m = d.metrics || {};
+      if (m.saturation && m.saturation.length) root.appendChild(card('frontier saturation: new pages per hour (a corpus builder runs out of new pages, then comes back or leaves)', table([{ label: 'hour (utc)', render: (r) => fmtTs(r.hour).slice(0, 13) + ':00' }, { label: 'requests', key: 'requests', num: true }, { label: 'new pages', key: 'fresh', num: true }, { label: 'new share', render: (r) => pct(r.requests ? r.fresh / r.requests : 0) }], m.saturation)));
+      if (m.revisits && m.revisits.length) root.appendChild(card('revisits: pages the pool fetched more than once', table([{ label: 'page', render: (r) => pageLink(r.page) }, { label: 'fetches', key: 'fetches', num: true }, { label: 'median gap', render: (r) => fmtRel(r.median_gap_ms) }, { label: 'last', render: (r) => fmtTs(r.last_ts) }], m.revisits)));
+      if (m.frontier) root.appendChild(card('frontier lag: first fetch of a page after the pool last fetched a page that links to it', m.frontier.n ? [kv({ 'pages with a measurable lag': m.frontier.n, p25: fmtRel(m.frontier.p25_ms), median: fmtRel(m.frontier.median_ms), p75: fmtRel(m.frontier.p75_ms) }), table([{ label: 'page', render: (r) => pageLink(r.page) }, { label: 'after', render: (r) => pageLink(r.parent) }, { label: 'lag', render: (r) => fmtRel(r.lag_ms) }], m.frontier.samples)] : h('p', { class: 'muted' }, 'no page-to-page handoff observed yet: every first fetch came before, or without, a fetch of a page that links to it')));
     } else {
       const cells = {}; for (const p of pages) { cells[p] = {}; for (const m of d.page_matrix[p]) cells[p][m.slice(0, 8)] = 1; }
       root.appendChild(card('page coverage matrix (which member fetched which page)', heatTable(pages, members.map((m) => m.slice(0, 8)), cells, { corner: 'page \\ session' })));

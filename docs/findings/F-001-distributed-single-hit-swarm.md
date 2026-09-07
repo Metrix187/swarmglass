@@ -55,6 +55,13 @@ Behavioural clustering (`src/telemetry/cluster.ts`, 24 h window, pairwise simila
 
 The pattern was still present at the end of the window and had not changed shape.
 
+Three details read from the same snapshot after the first draft:
+
+- **The frontier saturated within the day.** Per hour, the share of swarm page requests that hit a page the pool had never fetched fell from about half in the first hours to zero from 18:00 UTC on; the last four active hours were all re-fetches of pages already seen (Main_Page, Special:UserLogin, Legacy_Toolchain lead). 33 distinct pages after 129 requests, on a mirror with about 60 articles plus specials.
+- **Every internal Referer pointed at a hub, not a page.** The 27 referers were the index stub, the archive stub, the root, and Special:Random. No request carried a page-to-page referer, so the pool's URLs appear to be handed out from hub fetches rather than discovered one page from the last. A page-to-page frontier lag cannot be measured yet.
+- **No conditional requests.** The mirror did not emit `ETag` or `Last-Modified` until 2026-09-07, and no swarm request carried `If-None-Match` or `If-Modified-Since` (one such request exists in the whole database, from an unrelated session). The mirror now tags stable documents and answers 304; the swarm page tracks the share of members that revalidate.
+- **Frontier lag through the link graph, first reading.** Taking the seed's visible links as parent → child edges (the pool sends no page-to-page referers), 15 of the 30 pages had a measurable lag between the pool's last fetch of a linking page and its first fetch of the linked one: median 29 minutes, quartiles 13 and 52 minutes, the shortest 3 minutes (two children of `Main_Page`). Slower and wider than the 10-minute rhythm of new addresses, which says the scheduler's queue is not "fetch what the last page linked to, next tick". The swarm page in the console now computes this continuously.
+
 ## What this supports
 
 - A client pool can spend one request per address, from many addresses, at a rate that never trips a per-address limit, and be invisible to session-level scoring. The session is the wrong unit for this behaviour; the client signature across sessions is the right one.
@@ -69,7 +76,11 @@ Not phones. Ninety-six devices on a six-year-old iOS build, all requesting from 
 
 The address ranges are, by hand against public registry data, all allocated to a single cloud provider (Tencent Cloud's international ranges). The project does not store ASN and this note does not list prefixes; the attribution is a researcher's observation, not a stored field, and should be re-checked on each extension of the window. The same client string on the same provider's ranges, one hit per address, has been described publicly since 2024 by site operators and in at least one TLS-fingerprinting write-up. Who runs it has not been publicly established. The plausible reading is corpus collection for search or model training without disclosure; the language header is the loudest hint about where the operator sits, and hints are all this is.
 
-The `og_only` reaches are the most interesting behavioural detail: the client parses `<meta property="og:see_also">`, which ordinary link extractors ignore. That is a deliberate feature, not a generic crawler default.
+The `og_only` reaches are the most interesting behavioural detail: the client parses `<meta property="og:see_also">`, which ordinary link extractors ignore. That is a deliberate feature, not a generic crawler default. Whether it understands Open Graph or simply harvests any URL-shaped `content=` attribute is an open question with an experiment attached (below); nobody has reached the JSON-LD-only, header-only, or link-only pages yet, so selectivity is not established.
+
+The user-agent string is not a chosen disguise. It was the Chromium DevTools device-emulation preset for iPhone models, and the descriptor that Puppeteer-style tooling ships under names like "iPhone X", until a DevTools commit on 2023-09-12 ("Update device emulation user agent strings") moved the presets to iOS 16.6. Someone copied an emulation preset years ago and never updated it. The client behind the string is not Chromium, though: every Chromium since 2019 sends `Sec-Fetch-*` headers on navigations and these requests carry none, and the header order (`host, user-agent, accept, accept-encoding, accept-language, cache-control, pragma, upgrade-insecure-requests`) is not Chromium's. The `Cache-Control: no-cache` plus `Pragma: no-cache` pair is what Chrome sends with caching disabled, which fits the same story: an HTTP library carrying a copied browser fingerprint, headers included.
+
+External corroboration, checked on 2026-09-07: BotConduct's April 2026 report (part 2, actor profiles) describes the same string from Tencent Cloud ASN 132203, 194 addresses, 362 requests over six days, 1.8 requests per address, never reading robots.txt, and declines to attribute the operator beyond "any Tencent Cloud customer". Same client, same pool, five months earlier, on someone else's site.
 
 ## Caveats specific to this finding
 
@@ -87,6 +98,10 @@ The `og_only` reaches are the most interesting behavioural detail: the client pa
 - Confirm or refute rendering: a page that only reveals a link through JavaScript would settle whether anything executes.
 - If Caddy's TLS handshake logging is enabled at the edge, record the JA4 string for the pool once, by hand, and note it here; it is not stored by the app and should not be.
 - A second client string from the same ranges, or the same string from different ranges, would say whether the pool or the string is the stable thing.
+- Emit `ETag` and `Last-Modified` on pages and answer 304s; record whether any member ever sends a conditional request. A pool that revalidates has a document store behind it; one that never does is re-fetching blind.
+- Metadata-carrier experiment (now SGX-011, activated 2026-09-07 on `Main_Page`): one page exposing distinct hidden URLs through real `og:see_also`, a fake `swarmglass:see_also` property, an arbitrary `<meta content="https://…">`, `og:url`, `<link rel="alternate">`, `<link rel="canonical">`, JSON-LD, bare text in `<head>`, and an HTML comment, assigned per actor so each member sees one carrier. Which carriers get fetched separates a semantic Open Graph reader from a generic attribute miner from a structured-document ingester.
+- Keep the saturation curve (new pages / requests per hour) on the swarm page, and the revisit pattern once the frontier is exhausted: adaptive revisits with conditional requests point at an index, one broad pass then silence points at a snapshot corpus.
+- Frontier lag (parent exposure to first child fetch, across members) once page-to-page referers appear, or via the link graph for referer-less pools.
 
 ## Reproduce
 

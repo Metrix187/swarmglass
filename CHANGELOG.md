@@ -76,6 +76,12 @@ An MJ12bot crawl (242 requests, 236 with a query string) walked the `?oldid=` / 
 - **heuristics v4**: new feature `pragma_share`; `pragma_no_render` (declared browser, `Pragma` on 90%+ of requests, zero assets) is +1.0 to `automation_likelihood` and −1.5 on `human_browser`. On the live snapshot it marks 89 of the 93 swarm sessions and one real Chrome session (a hard-reload visit); the six swarm members that had reached `human_browser` on cookie-plus-few-pages evidence drop out of it. One-hit members stay `unknown` by design.
 - `docs/QUERIES.md` has the by-hand version of the detector for snapshots.
 
+### conditional requests, swarm metrics, SGX-011 — 2026-09-07
+
+- mirror: pages, alternates and attachments carry `ETag` (a hash of the bytes served, so it follows the actor's experiment arms) and `Last-Modified` (the page's fictional revision date), with `Cache-Control: public, max-age=0, must-revalidate`; `If-None-Match` / `If-Modified-Since` get a 304. The request is recorded either way. New features `conditional_share` and `n_304`; story steps say when a client revalidated; a 304 no longer counts as a redirect.
+- console: a swarm's page shows its saturation curve (new pages per hour), per-page revisit intervals, and frontier lag (first fetch of a page after the pool last fetched a page that links to it, from the seed's link graph); the shape summary carries the conditional-request share.
+- **SGX-011 metadata-carrier activated 2026-09-07**: `Backup_2014_Restore_Notes` (an orphan page) is advertised on `Main_Page` through exactly one `<head>` carrier per actor, eleven arms from a real `og:see_also` to a bare url in a comment plus a no-carrier control. Written to answer F-001's open question: semantic Open Graph reader, generic url miner, or structured-document ingester. New variable `metadata_carrier`. The seed is unchanged on purpose: a seed bump rotates every canary id, and F-001's watch list of ids shown only to the swarm depends on them staying put.
+
 ### still open (operator)
 
 - `remote_ip` allowlist on the console's Caddy block once the research networks are known.
