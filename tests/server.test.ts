@@ -380,3 +380,15 @@ test('SGX-011 carriers name the target with the arm revision id, and the tagged 
   assert.equal(r.status, 200);
   assert.ok((await r.text()).includes('old revision'));
 });
+
+test('an unknown path is a 404, not a 405 borrowed from the OPTIONS catch-all', async () => {
+  const r = await get('/admin', { headers: { 'user-agent': 'probe/404' } });
+  assert.equal(r.status, 404);
+  const o = await fetch(base + '/admin', { method: 'OPTIONS', headers: { 'user-agent': 'probe/404' } });
+  assert.equal(o.status, 204, 'preflight still answered by the catch-all');
+  const p = await fetch(base + '/robots.txt', { method: 'POST', headers: { 'user-agent': 'probe/404' } });
+  assert.equal(p.status, 405, 'a real method mismatch is still a 405');
+  flush();
+  const ev = app.db.get<{ resource_kind: string; status: number }>("SELECT resource_kind, status FROM events WHERE path = '/admin' AND method = 'GET' ORDER BY ts DESC LIMIT 1");
+  assert.equal(ev?.resource_kind, 'missing', 'scanner probes are recorded as dead links now');
+});

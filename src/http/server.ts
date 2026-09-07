@@ -116,7 +116,9 @@ export class Router {
     for (const r of this.routes) {
       const m = r.pattern.exec(path);
       if (!m) continue;
-      sawPath = true;
+      // the OPTIONS catch-all matches every path. that must not count as "this path exists", or every
+      // unknown GET turns into a 405 with an Allow header that says GET is fine (yes, that shipped)
+      if (r.method !== 'OPTIONS') sawPath = true;
       const effective = method === 'HEAD' ? 'GET' : method;
       if (r.method !== 'ANY' && r.method !== effective) continue;
       const params: Record<string, string> = {};
