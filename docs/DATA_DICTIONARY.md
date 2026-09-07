@@ -67,6 +67,7 @@ Computed by `computeFeatures()` in `src/telemetry/features.ts` from the session'
 | `cookie_returned`, `cookie_present_share` | |
 | `header_order_variants`, `mean_header_count` | distinct wire orders of header names |
 | `has_sec_fetch`, `has_client_hints`, `has_accept_language` | browser fetch-metadata presence |
+| `pragma_share` | share of requests carrying a `Pragma` header; browsers send it only on a hard reload, scrapers on every request |
 | `http2_share` | |
 | `accept_html_share`, `accept_json_share`, `accept_any_share` | what `Accept` asked for |
 | `negotiated_nonhtml` | responses served as non-html by negotiation |

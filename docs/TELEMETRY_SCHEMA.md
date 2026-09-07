@@ -84,7 +84,7 @@ One row per request, including rate-limited (429) and client-error (parse failur
 
 ## clusters
 
-`id`, window, `size`, `signals_json` (`[{signal, strength, note}]`), `swarm_score` (0–1), `label`, `synthetic`. Sessions point back via `cluster_id`. Recomputed every 5 minutes over the last 24 h; synthetic and real never mix.
+`id`, window, `size`, `signals_json` (`[{signal, strength, note}]`), `swarm_score` (0–1), `label`, `synthetic`, `kind` (`behaviour` or `swarm`), `summary_json` (swarms only: sessions, prefixes, single-hit share, asset share, pages, span). Sessions point back via `cluster_id`. Behavioural groups are recomputed every 5 minutes over the last 24 h; swarms (`SW-…`, one user-agent hash across many prefixes, one hit each, nothing rendered) over the last 7 days, and a swarm label wins over a behavioural one for the same session. Synthetic and real never mix.
 
 ## experiment_runs / synthetic_runs / kv / daily_stats / console_sessions / audit_log
 

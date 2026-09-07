@@ -221,16 +221,26 @@ export function similarSessions(d: QueryDeps, id: string, actorHash: string, sta
 
 export function listClusters(d: QueryDeps, range: Range, synthetic: 'real' | 'synthetic' | 'all'): Array<Record<string, unknown>> {
   const sf = synthFilter(synthetic);
-  const rows = d.db.all<{ id: string; created_at: number; window_start: number; window_end: number; size: number; signals_json: string; swarm_score: number; label: string; synthetic: number }>(
-    `SELECT * FROM clusters WHERE window_end >= ?${sf.sql} ORDER BY swarm_score DESC, size DESC LIMIT 100`,
+  const rows = d.db.all<{ id: string; created_at: number; window_start: number; window_end: number; size: number; signals_json: string; swarm_score: number; label: string; synthetic: number; kind: string; summary_json: string | null }>(
+    `SELECT * FROM clusters WHERE window_end >= ?${sf.sql} ORDER BY (kind = 'swarm') DESC, swarm_score DESC, size DESC LIMIT 100`,
     range.since,
     ...sf.args,
   );
-  return rows.map((r) => ({ ...r, signals: JSON.parse(r.signals_json), signals_json: undefined, members: d.db.all<{ id: string; ua_family: string | null; likely_class: string | null; ip_trunc: string | null; n_unique_pages: number; started_at: number }>('SELECT id, ua_family, likely_class, ip_trunc, n_unique_pages, started_at FROM sessions WHERE cluster_id = ? ORDER BY started_at', r.id) }));
+  return rows.map((r) => ({ ...r, signals: JSON.parse(r.signals_json), signals_json: undefined, summary: parseSummary(r.summary_json), summary_json: undefined, members: d.db.all<{ id: string; ua_family: string | null; likely_class: string | null; ip_trunc: string | null; n_unique_pages: number; started_at: number }>('SELECT id, ua_family, likely_class, ip_trunc, n_unique_pages, started_at FROM sessions WHERE cluster_id = ? ORDER BY started_at', r.id) }));
+}
+
+// swarm rows carry their shape as json; behavioural rows have none
+function parseSummary(json: string | null | undefined): Record<string, unknown> | null {
+  if (!json) return null;
+  try {
+    return JSON.parse(json) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
 }
 
 export function clusterDetail(d: QueryDeps, id: string): Record<string, unknown> | null {
-  const r = d.db.get<{ id: string; created_at: number; window_start: number; window_end: number; size: number; signals_json: string; swarm_score: number; label: string; synthetic: number }>('SELECT * FROM clusters WHERE id = ?', id);
+  const r = d.db.get<{ id: string; created_at: number; window_start: number; window_end: number; size: number; signals_json: string; swarm_score: number; label: string; synthetic: number; kind: string; summary_json: string | null }>('SELECT * FROM clusters WHERE id = ?', id);
   if (!r) return null;
   const members = d.db.all<Record<string, unknown>>('SELECT id, actor_hash, ua_family, ua_hash, likely_class, class_confidence, ip_trunc, n_requests, n_unique_pages, started_at, last_seen_at, features_json FROM sessions WHERE cluster_id = ? ORDER BY started_at', id).map(decodeSessionRow);
   const pageMatrix: Record<string, string[]> = {};
@@ -239,7 +249,7 @@ export function clusterDetail(d: QueryDeps, id: string): Record<string, unknown>
       (pageMatrix[p.page_id] ??= []).push(String(m.id));
     }
   }
-  return { ...r, signals: JSON.parse(r.signals_json), members, page_matrix: pageMatrix };
+  return { ...r, signals: JSON.parse(r.signals_json), summary: parseSummary(r.summary_json), summary_json: undefined, members, page_matrix: pageMatrix };
 }
 
 export function pageFunnel(d: QueryDeps, range: Range, synthetic: 'real' | 'synthetic' | 'all'): Array<Record<string, unknown>> {
@@ -361,7 +371,9 @@ export function anomalies(d: QueryDeps, range: Range, synthetic: 'real' | 'synth
   const dead = d.db.all<{ path: string; n: number; s: number }>(`SELECT path, COUNT(*) AS n, COUNT(DISTINCT session_id) AS s FROM events WHERE ts >= ? AND ts <= ? AND status = 404${sf.sql} GROUP BY path ORDER BY n DESC LIMIT 40`, range.since, range.until, ...sf.args);
   const probes = d.db.all(`SELECT ts, session_id, path, status FROM events WHERE ts >= ? AND ts <= ? AND malformed LIKE '%probe_pattern%'${sf.sql} ORDER BY ts DESC LIMIT 50`, range.since, range.until, ...sf.args);
   const searches = d.db.all<{ q: string; n: number }>(`SELECT json_extract(query_json, '$.search') AS q, COUNT(*) AS n FROM events WHERE ts >= ? AND ts <= ? AND page_id = 'Special:Search' AND query_json IS NOT NULL${sf.sql} GROUP BY q ORDER BY n DESC LIMIT 40`, range.since, range.until, ...sf.args);
-  return { malformed, rate_limited: limited, methods, posts, heavy_sessions: bursts, dead_paths: dead, probes, searches };
+  const swarms = d.db.all<{ id: string; window_start: number; window_end: number; size: number; swarm_score: number; label: string; summary_json: string | null }>(`SELECT id, window_start, window_end, size, swarm_score, label, summary_json FROM clusters WHERE kind = 'swarm' AND window_end >= ?${sf.sql} ORDER BY size DESC LIMIT 10`, range.since, ...sf.args)
+    .map((r) => ({ ...r, summary: parseSummary(r.summary_json), summary_json: undefined }));
+  return { swarms, malformed, rate_limited: limited, methods, posts, heavy_sessions: bursts, dead_paths: dead, probes, searches };
 }
 
 export function syntheticReport(d: QueryDeps): Record<string, unknown> {

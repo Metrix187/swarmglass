@@ -1,0 +1,98 @@
+# F-001 — One client string, many addresses, one hit each: a distributed swarm that looks like nothing at all
+
+*Status: draft, accumulating · Experiment: observational · Seed: 2026.09.0 · Heuristics: v3 at observation, v4 adds the per-session rule · Window: 2026-09-06 01:10 → 23:25 UTC (first day live; extend as data arrives) · Report: none yet · Bundle sha256: none yet*
+
+> Draft. The numbers below are one day of real traffic read from an internal-level snapshot by hand. Nothing here is published until a bundle exists and the window is longer than a day. Network prefixes are internal-level data and are deliberately not listed; the counts are.
+
+## Question
+
+Does a crawler that spends its requests one per address, from a large pool of addresses, register in a pipeline whose unit of analysis is the session? Answer so far: not on its own. Every member scored `unknown`, the actor fingerprint split them by prefix, and pairwise clustering had nothing to pair. This note records what the swarm looked like, how it was found, what was added so the console sees the next one, and what to collect before any of this is claimed.
+
+## Setup
+
+Nothing was varied. The mirror ran with seed 2026.09.0 and the seven active experiments; the swarm reached experiment arms like any other visitor. Detection was by hand: a snapshot of the live database was queried for sessions grouped by exact user-agent hash. The by-hand query is in `docs/QUERIES.md` ("Swarm candidates"); the automated version is `src/telemetry/swarm.ts`, which now runs every five minutes.
+
+What counts as a member: `synthetic = 0` and the user-agent string exactly equal to the one below. What counts as the swarm: the set of those sessions in the window.
+
+## What we observed
+
+The client string, verbatim:
+
+```
+Mozilla/5.0 (iPhone; CPU iPhone OS 13_2_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.0.3 Mobile/15E148 Safari/604.1
+```
+
+iOS 13.2.3 was released in November 2019.
+
+| measure | value |
+|---|---|
+| sessions | 96 |
+| requests | 119 |
+| distinct /24 prefixes | 86 |
+| distinct wider (/16-scale) blocks | 30 |
+| sessions with one or two requests | 89 (93%) |
+| sessions with more (all cookie-joined, same prefix) | 7, largest 10 requests |
+| asset fetches (css, js, favicon) | 0 |
+| robots.txt, sitemap fetches | 0, 0 |
+| feed and text-alternate fetches | 2, 7 |
+| distinct pages reached | 30 |
+| pages reachable only through OpenGraph `see_also` | 2 |
+| requests with an internal Referer | 27 (from the index stub, the archive stub, and Special:Random) |
+| requests with an external Referer | 0 |
+| requests carrying `Pragma` | 119 of 119 |
+| `Accept-Language` on every request | `zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7` |
+| distinct header-name orders | 3 (one base order; the other two add `cookie` and/or `referer`) |
+| cookies returned when the same prefix came back | 23 of 23 valid |
+| median gap between new sessions | about 10 minutes |
+| longest quiet stretch | about 3 hours (13:00 → 15:00 UTC) |
+| per-hour session starts | 2 to 7, every hour it was active |
+| canary ids exposed to members | 109 distinct (238 exposures: comment 85, visible 36, meta 36, header 36, JSON-LD 35, attachment 6, feed 2, yaml 1) |
+| canary sightings attributable to members | 0 |
+
+Per-session scoring under heuristics v3: 93 members `unknown` (the `tiny` rule, by design), 6 `human_browser` (cookie returned, few pages, no machine fetches), 1 `search_bot`. None of the 96 fetched a stylesheet; the six that scored human did so on the strength of a returned cookie and a short page list.
+
+Behavioural clustering (`src/telemetry/cluster.ts`, 24 h window, pairwise similarity ≥ 0.62) produced no group containing more than a handful of members: two one-request sessions share a user-agent and nothing else.
+
+The pattern was still present at the end of the window and had not changed shape.
+
+## What this supports
+
+- A client pool can spend one request per address, from many addresses, at a rate that never trips a per-address limit, and be invisible to session-level scoring. The session is the wrong unit for this behaviour; the client signature across sessions is the right one.
+- The pool follows internal links (Referer values point at the mirror's own index and archive stubs and at Special:Random), reads OpenGraph metadata (two `og_only` pages were reached, which are listed nowhere else), and occasionally takes feeds and text alternates. It does not read robots.txt.
+- The pool does not render: zero asset fetches across 119 requests from a client that claims to be Mobile Safari.
+- `Pragma` on every request separates this client from real browsers in this dataset: 89 of the 93 swarm sessions versus 1 of 16 real Chrome sessions (a hard-reload visit).
+- Cookies are honoured per address (23 of 23 valid on return) but no cookie ever moved between prefixes: every multi-request session had one actor fingerprint.
+
+## Speculation
+
+Not phones. Ninety-six devices on a six-year-old iOS build, all requesting from cloud address ranges, all Chinese-language, none rendering, is one program with a pool of egress addresses. The one-hit-per-address pattern reads as a design goal rather than an accident: it defeats per-address rate limits and, as it happens, session-based analysis.
+
+The address ranges are, by hand against public registry data, all allocated to a single cloud provider (Tencent Cloud's international ranges). The project does not store ASN and this note does not list prefixes; the attribution is a researcher's observation, not a stored field, and should be re-checked on each extension of the window. The same client string on the same provider's ranges, one hit per address, has been described publicly since 2024 by site operators and in at least one TLS-fingerprinting write-up. Who runs it has not been publicly established. The plausible reading is corpus collection for search or model training without disclosure; the language header is the loudest hint about where the operator sits, and hints are all this is.
+
+The `og_only` reaches are the most interesting behavioural detail: the client parses `<meta property="og:see_also">`, which ordinary link extractors ignore. That is a deliberate feature, not a generic crawler default.
+
+## Caveats specific to this finding
+
+- One day. The window must grow before any of the rates above are quoted as properties of the pool rather than of this day.
+- Six members scored `human_browser` under v3. Heuristics v4 (`pragma_no_render`) removes that; the table above is the v3 record and is kept as such.
+- Sessions are keyed by cookie, then by prefix plus user-agent. A pool that shared a cookie jar across addresses would collapse into fewer, longer sessions and look entirely different. This one did not; a later one might.
+- The swarm detector's thresholds (12 sessions, 8 prefixes, 60% one-hit, under 5% assets) were chosen against this single example and the day's real browser traffic. They should be revisited once a second swarm exists.
+- Canary exposure is the lever here. 109 distinct canary ids were shown only to members of this pool. None has been sighted anywhere. If any of them appears in a search index, a model's answer, or a third-party fetch, that sighting attributes the pool's purpose; until then the purpose is speculation.
+
+## What to collect next
+
+- Keep the window open: the detector rebuilds `SW-…` rows every five minutes over seven days. Export the swarm's member list and page set weekly; note whether the page set grows (crawl frontier) or repeats (re-crawl cadence).
+- Watch the 109 canaries. `canary_sightings` joined to the swarm's exposures answers the purpose question directly.
+- Measure re-crawl: does the same page get fetched again by a different address, and after how long?
+- Confirm or refute rendering: a page that only reveals a link through JavaScript would settle whether anything executes.
+- If Caddy's TLS handshake logging is enabled at the edge, record the JA4 string for the pool once, by hand, and note it here; it is not stored by the app and should not be.
+- A second client string from the same ranges, or the same string from different ranges, would say whether the pool or the string is the stable thing.
+
+## Reproduce
+
+```bash
+# on a snapshot of the database (see docs/PUBLISHING.md for how snapshots are taken)
+sqlite3 snapshot.db < docs/QUERIES.md   # run the "Swarm candidates" query
+# or let the job do it:
+npm run rescore                          # scores, then clustering incl. swarms; console → cohorts / anomalies
+```

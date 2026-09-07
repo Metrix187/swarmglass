@@ -6,6 +6,7 @@ import { testConfig } from '../src/config.ts';
 import { loadHeuristics, score, evalCond, validateHeuristics } from '../src/telemetry/scoring.ts';
 import { computeFeatures, type EventRow, type SessionRow } from '../src/telemetry/features.ts';
 import { buildStory } from '../src/console/story.ts';
+import { detectSwarms, type SwarmSession } from '../src/telemetry/swarm.ts';
 import { describeCluster, type ClusterSession } from '../src/telemetry/cluster.ts';
 import { familyCategory, uaFamily } from '../src/telemetry/ua.ts';
 import { assertNoLeak, sanitizeSession } from '../src/publish/sanitize.ts';
@@ -234,4 +235,48 @@ test('features + story: query keys the site never emits are foreign, and the sum
   assert.ok(hiddenStep.notes.some((n) => n.startsWith('reached an obscure page')), hiddenStep.notes.join(' | '));
   assert.ok(story.summary.includes('2 distinct pages'), story.summary);
   assert.ok(story.summary.includes('reached 1 hidden page (2 requests)'), story.summary);
+});
+
+test('swarm detector: one client signature across many addresses, one hit each', () => {
+  // modelled on the iphone-13.2.3 pool: a fresh /24 every ten minutes, one page each, never a stylesheet
+  const mk = (i: number, extra: Partial<SwarmSession> = {}): SwarmSession => ({ id: 's' + i, started_at: i * 600_000, last_seen_at: i * 600_000 + 100, ip_trunc: `43.${130 + (i % 20)}.${i}.0/24`, ua_hash: 'ua1', ua_family: 'safari', ua: 'Mozilla/5.0 (iPhone; CPU iPhone OS 13_2_3 like Mac OS X)', n_requests: 1, n_subresources: 0, synthetic: false, pages: new Set(['P' + i]), ...extra });
+  const swarms = detectSwarms(Array.from({ length: 30 }, (_, i) => mk(i)));
+  assert.equal(swarms.length, 1);
+  const s = swarms[0]!;
+  assert.equal(s.members.length, 30);
+  assert.ok(s.id.startsWith('SW-'), s.id);
+  for (const sig of ['many_prefixes_one_client', 'one_hit_per_address', 'never_rendered', 'sustained_trickle', 'partitioned_coverage']) assert.ok(s.signals.some((x) => x.signal === sig), `missing ${sig}`);
+  assert.equal(s.summary.prefixes, 30);
+  assert.equal(s.summary.pages, 30);
+  assert.ok(s.swarm_score >= 0.6, `score ${s.swarm_score}`);
+  // same input, same id: links in notes have to survive the five-minute rebuild
+  assert.equal(detectSwarms(Array.from({ length: 30 }, (_, i) => mk(i)))[0]!.id, s.id);
+  // thirty one-hit visits from one prefix is a nat, not a swarm
+  assert.equal(detectSwarms(Array.from({ length: 30 }, (_, i) => mk(i, { ip_trunc: '203.0.113.0/24' }))).length, 0);
+  // thirty phones that render pages are thirty phones
+  assert.equal(detectSwarms(Array.from({ length: 30 }, (_, i) => mk(i, { n_requests: 6, n_subresources: 5 }))).length, 0);
+  // twelve is the floor
+  assert.equal(detectSwarms(Array.from({ length: 11 }, (_, i) => mk(i))).length, 0);
+  // synthetic and real never share a swarm
+  assert.equal(detectSwarms([...Array.from({ length: 8 }, (_, i) => mk(i)), ...Array.from({ length: 8 }, (_, i) => mk(100 + i, { synthetic: true }))]).length, 0);
+});
+
+test('features + heuristics: a browser string that sends Pragma on every request and never renders loses its human points', () => {
+  const h = loadHeuristics(join(process.cwd(), 'config', 'heuristics.json'));
+  validateHeuristics(h);
+  const names = 'host,user-agent,accept,accept-encoding,accept-language,cache-control,pragma,upgrade-insecure-requests';
+  const events = [0, 2500, 5000].map((ts, i) => ev({ ts, page_id: 'P' + i, path: '/wiki/P' + i, header_names: names, accept_lang: 'zh-CN' }));
+  const sess: SessionRow = { ...session, ua: 'Mozilla/5.0 (iPhone; CPU iPhone OS 13_2_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.0.3 Mobile/15E148 Safari/604.1', ua_family: 'safari' };
+  const f = computeFeatures(sess, events, pageInfo);
+  assert.equal(f.pragma_share, 1);
+  assert.equal(f.ua_category, 'browser');
+  const s = score(h, f);
+  assert.ok(s.class_evidence.human_browser!.some((e) => e.rule === 'pragma_no_render'));
+  assert.ok(s.traits.automation_likelihood!.evidence.some((e) => e.rule === 'pragma_no_render'));
+  assert.notEqual(s.likely_class, 'human_browser');
+  // the same three pages from a browser that fetched its stylesheet and sent no Pragma keep the rule quiet
+  const quiet = names.replace(',pragma', '');
+  const real = computeFeatures(sess, [...events.map((e) => ({ ...e, header_names: quiet })), ev({ ts: 300, path: '/skins/antfarm/main.css', page_id: null, resource_kind: 'asset', header_names: quiet })], pageInfo);
+  assert.equal(real.pragma_share, 0);
+  assert.ok(!score(h, real).class_evidence.human_browser!.some((e) => e.rule === 'pragma_no_render'));
 });

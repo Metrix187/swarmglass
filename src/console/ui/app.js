@@ -226,7 +226,7 @@
     if (d.error) { root.append(h('p', { class: 'error' }, d.error)); return; }
     const s = d.session, st = d.story;
     root.append(h('h1', null, 'session ', h('code', null, s.id)),
-      h('p', null, classTag(s.likely_class), ' ', tag(`ua: ${s.ua_family || 'none'}`), ' ', s.synthetic ? tag(`synthetic · ${s.synthetic_persona || ''}`, 'warn') : null, ' ', s.cluster_id ? link('#/cluster/' + s.cluster_id, 'cluster ' + s.cluster_id) : null, ' ', s.cohorts ? Object.entries(s.cohorts).map(([k, v]) => link('#/experiment/' + k, `${k}:${v} `)) : null),
+      h('p', null, classTag(s.likely_class), ' ', tag(`ua: ${s.ua_family || 'none'}`), ' ', s.synthetic ? tag(`synthetic · ${s.synthetic_persona || ''}`, 'warn') : null, ' ', s.cluster_id ? (s.cluster_id.startsWith('SW-') ? tag('member of swarm ' + s.cluster_id, 'bad') : null) : null, ' ', s.cluster_id ? link('#/cluster/' + s.cluster_id, (s.cluster_id.startsWith('SW-') ? 'open swarm ' : 'cluster ') + s.cluster_id) : null, ' ', s.cohorts ? Object.entries(s.cohorts).map(([k, v]) => link('#/experiment/' + k, `${k}:${v} `)) : null),
       h('div', { class: 'story' }, st.summary),
       h('ul', { class: 'caveats' }, st.caveats.map((c) => h('li', null, c))));
     const grid = h('div', { class: 'grid' });
@@ -260,9 +260,19 @@
 
   views.clusters = async (root) => {
     const d = await api(`/api/clusters?${qs()}`);
-    root.append(h('h1', null, 'cohorts'), note('sessions are grouped by page-set overlap, feature similarity, client signature, network prefix, and time overlap. the swarm score sums the coordination signals listed for each group; a high score is a reason to look, not a conclusion.'));
+    root.append(h('h1', null, 'cohorts'), note('sessions are grouped by page-set overlap, feature similarity, client signature, network prefix, and time overlap. the swarm score sums the coordination signals listed for each group; a high score is a reason to look, not a conclusion. distributed swarms are found separately over the last 7 days: one exact user-agent across many network prefixes, one or two requests each, nothing rendered.'));
     if (!d.clusters.length) { root.append(h('p', { class: 'muted' }, 'no groups in range — clustering runs every 5 minutes over the last 24h of scored sessions')); return; }
     for (const c of d.clusters) {
+      if (c.kind === 'swarm') {
+        const s = c.summary || {};
+        root.appendChild(card(`${c.id} · swarm · ${s.sessions} sessions across ${s.prefixes} prefixes · ${fmtTs(c.window_start)} → ${fmtTs(c.window_end)}${c.synthetic ? ' · SYNTHETIC' : ''}`,
+          h('p', null, tag(c.label, 'bad'), ' ', tag('ua: ' + (s.ua_family || 'none')), ' ', h('code', { class: 'muted' }, s.ua_sample || '')),
+          h('div', { class: 'two' },
+            h('div', null, h('h3', null, 'signals'), h('ul', { class: 'evidence' }, c.signals.map((x) => h('li', null, h('span', { class: 'w' }, x.strength.toFixed(2)), ` ${x.signal.replace(/_/g, ' ')}: ${x.note}`)))),
+            h('div', null, h('h3', null, 'shape'), swarmShape(s))),
+          h('p', null, link('#/cluster/' + c.id, 'open swarm →'), ' · ', link('#/sessions?cluster=' + c.id, 'filter sessions'))));
+        continue;
+      }
       root.appendChild(card(`${c.id} · ${c.label} · swarm score ${c.swarm_score.toFixed(2)} · ${c.size} sessions · ${fmtTs(c.window_start)} → ${fmtTs(c.window_end)}${c.synthetic ? ' · SYNTHETIC' : ''}`,
         h('div', { class: 'two' },
           h('div', null, h('h3', null, 'signals'), c.signals.length ? h('ul', { class: 'evidence' }, c.signals.map((s) => h('li', null, h('span', { class: 'w' }, s.strength.toFixed(2)), ` ${s.signal.replace(/_/g, ' ')}: ${s.note}`))) : h('p', { class: 'muted' }, 'similar sessions, no coordination signal')),
@@ -270,15 +280,25 @@
         h('p', null, link('#/cluster/' + c.id, 'open cohort →'), ' · ', link('#/sessions?cluster=' + c.id, 'filter sessions'))));
     }
   };
+  function swarmShape(s) {
+    return kv({ sessions: s.sessions, requests: s.requests, 'network prefixes': `${s.prefixes} (${s.prefixes16} wider blocks)`, 'one-or-two-request sessions': pct(s.single_hit_share), 'asset share': pct(s.asset_share), 'pages touched': s.pages, 'a new address every': s.median_start_gap_ms ? fmtRel(s.median_start_gap_ms) : '—', 'first seen': s.first_seen ? fmtTs(s.first_seen) : '—', 'last seen': s.last_seen ? fmtTs(s.last_seen) : '—' });
+  }
   views.cluster = async (root, params, id) => {
     const d = await api(`/api/clusters/${encodeURIComponent(id)}`);
     if (d.error) { root.append(h('p', { class: 'error' }, d.error)); return; }
-    root.append(h('h1', null, 'cohort ', h('code', null, d.id)), h('p', null, tag(d.label, 'lilac'), ` swarm score ${d.swarm_score.toFixed(2)} · ${d.size} sessions`));
+    const swarm = d.kind === 'swarm';
+    root.append(h('h1', null, swarm ? 'swarm ' : 'cohort ', h('code', null, d.id)), h('p', null, tag(d.label, swarm ? 'bad' : 'lilac'), ` swarm score ${d.swarm_score.toFixed(2)} · ${d.size} sessions`));
     root.appendChild(card('signals', h('ul', { class: 'evidence' }, d.signals.map((s) => h('li', null, h('span', { class: 'w' }, s.strength.toFixed(2)), ` ${s.signal.replace(/_/g, ' ')}: ${s.note}`)))));
     const members = d.members.map((m) => m.id);
     const pages = Object.keys(d.page_matrix).sort();
-    const cells = {}; for (const p of pages) { cells[p] = {}; for (const m of d.page_matrix[p]) cells[p][m.slice(0, 8)] = 1; }
-    root.appendChild(card('page coverage matrix (which member fetched which page)', heatTable(pages, members.map((m) => m.slice(0, 8)), cells, { corner: 'page \\ session' })));
+    if (swarm) {
+      // a 96-column matrix says nothing; for a swarm the question is which pages the pool was handed
+      root.appendChild(card('shape', swarmShape(d.summary || {})));
+      root.appendChild(card('pages touched, and by how many members', table([{ label: 'page', render: (r) => pageLink(r.page) }, { label: 'members', key: 'n', num: true }], pages.map((p) => ({ page: p, n: d.page_matrix[p].length })).sort((a, b) => b.n - a.n))));
+    } else {
+      const cells = {}; for (const p of pages) { cells[p] = {}; for (const m of d.page_matrix[p]) cells[p][m.slice(0, 8)] = 1; }
+      root.appendChild(card('page coverage matrix (which member fetched which page)', heatTable(pages, members.map((m) => m.slice(0, 8)), cells, { corner: 'page \\ session' })));
+    }
     root.appendChild(card('members', table([{ label: 'session', render: (r) => sid(r.id) }, { label: 'actor', render: (r) => h('code', null, r.actor_hash.slice(0, 10)) }, { label: 'ua', render: (r) => tag(r.ua_family || '') }, { label: 'class', render: (r) => [classTag(r.likely_class), ' ', h('span', { class: 'muted' }, num(r.class_confidence))] }, { label: 'net', render: (r) => h('code', null, r.ip_trunc || '—') }, { label: 'req', key: 'n_requests', num: true }, { label: 'pages', key: 'n_unique_pages', num: true }, { label: 'started', render: (r) => fmtTs(r.started_at) }, { label: 'ended', render: (r) => fmtTs(r.last_seen_at) }], d.members)));
   };
 
@@ -373,6 +393,7 @@
     const d = await api(`/api/anomalies?${qs()}`);
     root.append(h('h1', null, 'anomalies'));
     const g = h('div', { class: 'grid' }); root.appendChild(g);
+    g.appendChild(withSpan(card('distributed swarms (one client signature, many addresses, one hit each)', (d.swarms || []).length ? table([{ label: 'swarm', render: (r) => link('#/cluster/' + r.id, r.id) }, { label: 'ua', render: (r) => tag((r.summary || {}).ua_family || '') }, { label: 'sessions', render: (r) => num((r.summary || {}).sessions) }, { label: 'prefixes', render: (r) => num((r.summary || {}).prefixes) }, { label: 'one-hit share', render: (r) => pct((r.summary || {}).single_hit_share) }, { label: 'pages', render: (r) => num((r.summary || {}).pages) }, { label: 'first seen', render: (r) => fmtTs(r.window_start) }, { label: 'last seen', render: (r) => fmtTs(r.window_end) }], d.swarms) : h('p', { class: 'muted' }, 'none in range: no user-agent hash with 12+ sessions across 8+ prefixes, mostly one-hit, nothing rendered')), 'span12'));
     g.appendChild(withSpan(card('malformed / unusual requests', table([{ label: 'when', render: (r) => fmtTs(r.ts) }, { label: 'session', render: (r) => sid(r.session_id) }, { label: 'method', key: 'method' }, { label: 'path', render: (r) => h('code', null, r.path.slice(0, 70)) }, { label: 'status', key: 'status', num: true }, { label: 'flags', render: (r) => JSON.parse(r.malformed).map((f) => tag(f, 'warn')) }], d.malformed)), 'span12'));
     g.appendChild(withSpan(card('rate limited sessions', table([{ label: 'session', render: (r) => sid(r.session_id) }, { label: '429s', key: 'n', num: true }, { label: 'ua', render: (r) => tag(r.ua_family || '') }], d.rate_limited)), 'span4'));
     g.appendChild(withSpan(card('heavy sessions (≥200 requests)', table([{ label: 'session', render: (r) => sid(r.session_id) }, { label: 'requests', key: 'n', num: true }, { label: 'ua', render: (r) => tag(r.ua_family || '') }], d.heavy_sessions)), 'span4'));

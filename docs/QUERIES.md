@@ -119,3 +119,16 @@ SELECT (SELECT COUNT(*) FROM events) AS events, (SELECT COUNT(*) FROM sessions) 
 - `features_json` and `scores_json` are JSON; SQLite's `json_extract` reads them. Keys are in `DATA_DICTIONARY.md`.
 - `cohorts_json` keys contain a hyphen, so quote them: `'$."SGX-001"'`.
 - Never paste query results containing `ip_trunc`, `ua`, `id` or `actor_hash` into anything public. The exports exist for that.
+
+## Swarm candidates: one user-agent hash, many prefixes, one hit each
+
+```sql
+SELECT ua_hash, MIN(ua) AS ua, COUNT(*) AS sessions, COUNT(DISTINCT ip_trunc) AS prefixes,
+       ROUND(AVG(n_requests <= 2), 2) AS single_hit_share, SUM(n_subresources) AS assets,
+       datetime(MIN(started_at)/1000, 'unixepoch') AS first_seen, datetime(MAX(started_at)/1000, 'unixepoch') AS last_seen
+FROM sessions WHERE synthetic = 0 AND started_at > (unixepoch() - 7*86400) * 1000
+GROUP BY ua_hash HAVING sessions >= 12 AND prefixes >= 8 AND single_hit_share >= 0.6 AND assets = 0
+ORDER BY sessions DESC;
+```
+
+`src/telemetry/swarm.ts` runs the same idea every five minutes and writes a `kind = 'swarm'` row into `clusters`; this is the by-hand version for a snapshot.

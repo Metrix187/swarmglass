@@ -200,6 +200,8 @@ export function computeFeatures(session: SessionRow, events: EventRow[], pageInf
   f.has_sec_fetch = /sec-fetch-/.test(names);
   f.has_accept_language = ev.some((e) => Boolean(e.accept_lang));
   f.has_client_hints = /sec-ch-ua/.test(names);
+  // Pragma on every request is a scraper habit; a browser only sends it on a hard reload
+  f.pragma_share = n ? ev.filter((e) => `,${e.header_names ?? ''},`.includes(',pragma,')).length / n : 0;
   f.http2_share = n ? ev.filter((e) => e.http_version === '2.0').length / n : 0;
   f.accept_html_share = n ? ev.filter((e) => (e.accept ?? '').includes('text/html')).length / n : 0;
   f.accept_json_share = n ? ev.filter((e) => /application\/(ld\+)?json/.test(e.accept ?? '')).length / n : 0;

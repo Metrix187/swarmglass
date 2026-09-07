@@ -67,6 +67,15 @@ An MJ12bot crawl (242 requests, 236 with a query string) walked the `?oldid=` / 
 - **curiosity**: `history_walk` (+0.15).
 - Story steps say what a variant asked for ("old revision 4102 of Worker_Node_Registry", "diff 4111 against 4110", "edit view (section 3)") and flag query keys the site never emits. Run `npm run rescore` after deploying; the nine synthetic personas keep their designed classes.
 
+### swarm detector + heuristics v4 — 2026-09-06
+
+96 one-request sessions in a day carried the same December-2019 iPhone Safari string from 86 different /24 prefixes, sent `Pragma` on every request, never fetched an asset, and never fetched robots.txt. Every one of them scored `unknown` on its own, the actor fingerprint kept them apart, and pairwise clustering had nothing to pair. Written up as `docs/findings/F-001` (draft, accumulating).
+
+- New `src/telemetry/swarm.ts`: groups sessions by exact user-agent hash over the last 7 days and calls a group a swarm when it has 12+ sessions across 8+ prefixes (at least one prefix per two sessions), 60%+ of them one or two requests, and under 5% asset fetches. Signals: `many_prefixes_one_client`, `one_hit_per_address`, `never_rendered`, `sustained_trickle`, `partitioned_coverage`. Ids are `SW-…`, stable across runs for the same client and first day.
+- `clusters` gains `kind` (`behaviour` | `swarm`) and `summary_json` (migration `002_cluster_kind.sql`). The clustering job writes swarms alongside behavioural groups; a swarm label wins over a behavioural one for the same session. Cohorts and anomalies show them with their shape; the session page says "member of swarm SW-…".
+- **heuristics v4**: new feature `pragma_share`; `pragma_no_render` (declared browser, `Pragma` on 90%+ of requests, zero assets) is +1.0 to `automation_likelihood` and −1.5 on `human_browser`. On the live snapshot it marks 89 of the 93 swarm sessions and one real Chrome session (a hard-reload visit); the six swarm members that had reached `human_browser` on cookie-plus-few-pages evidence drop out of it. One-hit members stay `unknown` by design.
+- `docs/QUERIES.md` has the by-hand version of the detector for snapshots.
+
 ### still open (operator)
 
 - `remote_ip` allowlist on the console's Caddy block once the research networks are known.

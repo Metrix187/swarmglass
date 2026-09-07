@@ -5,6 +5,7 @@ import type { Telemetry } from './capture.ts';
 import { computeFeatures, type EventRow, type PageInfo, type SessionRow } from './features.ts';
 import { score, type Heuristics } from './scoring.ts';
 import { clusterSessions, loadClusterSessions } from './cluster.ts';
+import { detectSwarms, loadSwarmSessions } from './swarm.ts';
 import { diskGuard, purgeOlderThan } from './retention.ts';
 import { randomId } from '../util/hash.ts';
 import { dayKey } from '../util/time.ts';
@@ -57,13 +58,15 @@ export function scoreSessions(deps: JobDeps, opts: { debounceMs?: number; limit?
   return n;
 }
 
-export function runClustering(deps: JobDeps, windowMs = 24 * 3_600_000): number {
+export function runClustering(deps: JobDeps, windowMs = 24 * 3_600_000, swarmWindowMs = 7 * 86_400_000): number {
   const { db } = deps;
   const since = Date.now() - windowMs;
   const sessions = loadClusterSessions(db, since, 1500);
   const clusters = clusterSessions(sessions);
+  // swarms get the long window: at six new addresses an hour, a day of one-hit sessions is barely a hint
+  const swarms = detectSwarms(loadSwarmSessions(db, Date.now() - swarmWindowMs));
   db.transaction(() => {
-    db.run('DELETE FROM clusters WHERE window_end >= ?', since);
+    db.run("DELETE FROM clusters WHERE kind = 'behaviour' AND window_end >= ?", since);
     db.run('UPDATE sessions SET cluster_id = NULL WHERE started_at >= ?', since);
     for (const c of clusters) {
       const id = 'CL-' + randomId(4);
@@ -81,8 +84,27 @@ export function runClustering(deps: JobDeps, windowMs = 24 * 3_600_000): number 
       );
       for (const m of c.members) db.run('UPDATE sessions SET cluster_id = ? WHERE id = ?', id, m);
     }
+    // swarms are rebuilt from scratch every run, and a swarm label wins over a behavioural one
+    db.run("UPDATE sessions SET cluster_id = NULL WHERE cluster_id IN (SELECT id FROM clusters WHERE kind = 'swarm')");
+    db.run("DELETE FROM clusters WHERE kind = 'swarm'");
+    for (const sw of swarms) {
+      db.run(
+        "INSERT INTO clusters (id, created_at, window_start, window_end, size, signals_json, swarm_score, label, synthetic, kind, summary_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'swarm', ?)",
+        sw.id,
+        Date.now(),
+        sw.window_start,
+        sw.window_end,
+        sw.members.length,
+        JSON.stringify(sw.signals),
+        sw.swarm_score,
+        sw.label,
+        sw.synthetic,
+        JSON.stringify(sw.summary),
+      );
+      for (const m of sw.members) db.run('UPDATE sessions SET cluster_id = ? WHERE id = ?', sw.id, m);
+    }
   });
-  return clusters.length;
+  return clusters.length + swarms.length;
 }
 
 export function rollupDaily(deps: JobDeps, day = dayKey(Date.now())): void {
