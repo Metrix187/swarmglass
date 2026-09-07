@@ -4,7 +4,7 @@ import type { Req } from '../http/server.ts';
 import type { Catalog, DiscoverClass, Page } from './content.ts';
 import type { CanaryService, Canary, Placement } from '../telemetry/canary.ts';
 import type { SessionState } from '../telemetry/session.ts';
-import { CARRIER_TOKEN_KEY, ExperimentRegistry, armTokens, variablesFor, type Assignment, type VariableName, type VariableValue } from '../experiments/registry.ts';
+import { CARRIER_TOKEN_KEY, ExperimentRegistry, armByToken, armTokens, variablesFor, type Assignment, type VariableName, type VariableValue } from '../experiments/registry.ts';
 import type { RenderCtx } from './render.ts';
 import { randomId } from '../util/hash.ts';
 import { esc } from '../http/html.ts';
@@ -128,6 +128,18 @@ export function reqCtx(deps: WikiDeps, req: Req): ReqCtx {
       let depth = page.depth;
       if (ov.link_visibility) discover = LV_TO_DISCOVER[ov.link_visibility] ?? discover;
       if (ov.metadata_carrier) discover = MC_TO_DISCOVER[ov.metadata_carrier] ?? discover;
+      // a carrier target fetched with an arm's revision id was found through that arm's carrier, whoever is
+      // fetching. the fetcher's own arm is just a hash: the first real hit (F-001) came from an address that
+      // had drawn "canonical" and got stamped link_only for following an og:image
+      const tok = ov.metadata_carrier ? req.query.get(CARRIER_TOKEN_KEY) : null;
+      if (tok) {
+        for (const d of deps.registry.active()) {
+          if (d.variable !== 'metadata_carrier' || !d.targets.includes(page.id)) continue;
+          const armId = armByToken(d).get(tok);
+          const armDef = armId ? d.arms.find((a) => a.id === armId) : undefined;
+          if (armDef) discover = MC_TO_DISCOVER[armDef.value] ?? discover;
+        }
+      }
       if (ov.link_depth) depth = ov.link_depth === 'shallow' ? 1 : page.depth;
       return { discover, depth };
     },

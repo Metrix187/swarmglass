@@ -379,6 +379,14 @@ test('SGX-011 carriers name the target with the arm revision id, and the tagged 
   const r = await get(`/wiki/Backup_2014_Restore_Notes?oldid=${[...ids][0]}`, { headers: { 'user-agent': 'carrier-probe/x' } });
   assert.equal(r.status, 200);
   assert.ok((await r.text()).includes('old revision'));
+  // the id in the url decides the discover class of the fetch, not the fetcher's own arm: same actor, two ids, two classes
+  const toks = armTokens(def);
+  const h = await get(`/wiki/Backup_2014_Restore_Notes?oldid=${toks.get('H')}`, { headers: { 'user-agent': 'carrier-probe/x' } });
+  assert.equal(h.status, 200);
+  flush();
+  const cls = (tok: string) => app.db.get<{ discover_class: string }>("SELECT discover_class FROM events WHERE page_id = 'Backup_2014_Restore_Notes' AND query_json LIKE ? ORDER BY ts DESC LIMIT 1", `%"oldid":"${tok}"%`)?.discover_class;
+  assert.equal(cls(toks.get('A') as string), 'og_only');
+  assert.equal(cls(toks.get('H') as string), 'jsonld_only');
 });
 
 test('an unknown path is a 404, not a 405 borrowed from the OPTIONS catch-all', async () => {
