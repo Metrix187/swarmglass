@@ -51,7 +51,7 @@ Per-actor assignment assumes the actor that sees a stimulus is the one that acts
 
 | metric | computed as |
 |---|---|
-| `page_reached` | sessions in the arm with ≥ 1 successful fetch of `page` ÷ sessions in the arm, with a Wilson 95% interval; `page: "api:openapi"` counts the OpenAPI route. For `metadata_carrier` experiments: sessions that fetched `page` carrying the arm's revision id, from any cohort, ÷ sessions in the arm that fetched the host page (`exposed`), split into `same_actor` and `cross_actor`; fetches carrying no known id are reported once as `unattributed` |
+| `page_reached` | sessions in the arm with ≥ 1 successful fetch of `page` ÷ sessions in the arm, with a Wilson 95% interval; `page: "api:openapi"` counts the OpenAPI route. For `metadata_carrier` experiments: sessions that fetched `page` carrying the arm's revision id, from any cohort, ÷ sessions in the arm that were served the host page as html (`exposed`; a HEAD, a 304, an alternate or an `action=` view carries no head markup and does not count), split into `same_actor` and `cross_actor`; fetches carrying no known id are reported once as `unattributed` |
 | `seconds_to_page` | median and p90 of (first discovery of `page` − session start); for `metadata_carrier`, of (tagged fetch − the arm's latest host-page exposure before it), which is the handoff lag |
 | `alt_requested` | sessions that fetched an alternate representation of `page` |
 | `canary_reappeared` | sessions that presented any canary |

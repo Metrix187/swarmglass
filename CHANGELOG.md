@@ -85,6 +85,7 @@ An MJ12bot crawl (242 requests, 236 with a query string) walked the `?oldid=` / 
 ### SGX-011 v2: the arm rides in the url — 2026-09-07
 
 - The first six assignments under v1 showed the hole in the design: arms are per actor, the swarm in F-001 hands urls from the address that saw a carrier to another address that fetches them, and every arm named the same url, so a target fetch would have been credited to whatever arm the fetching address happened to draw. v2 names the target `?oldid=<six-digit id>`, one id per arm, never colliding with a seeded revision id, and the mirror answers any revision id as a permalink. `page_reached` for `metadata_carrier` experiments now credits a fetch to the arm whose id it carries whichever actor makes it, uses `exposed` (sessions in the arm that fetched the host page) as the denominator, splits `same_actor` from `cross_actor`, and counts fetches with no known id as `unattributed`. `seconds_to_page` becomes the lag from the arm's latest exposure to the tagged fetch. The version bump reshuffles arms; the six v1 sessions stay on record under v1 in `experiment_runs`.
+- Same night, a correction: `exposed` only counts the host page served as html (`GET`, 200, a page render). The first version counted any successful fetch of `Main_Page`, and within the hour two swarm members had fetched only its `action=history` and `action=edit` views, which carry no head markup and would have counted as exposures that never happened.
 
 ### still open (operator)
 

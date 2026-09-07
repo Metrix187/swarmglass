@@ -151,6 +151,7 @@ GROUP BY oldid ORDER BY sessions DESC;
 SELECT e.ts, e.session_id, json_extract(e.query_json, '$.oldid') AS oldid, s.ua_family, s.cluster_id
 FROM events e JOIN sessions s ON s.id = e.session_id
 WHERE e.synthetic = 0 AND e.page_id = 'Backup_2014_Restore_Notes' AND e.status < 400
-  AND e.actor_hash NOT IN (SELECT actor_hash FROM events WHERE page_id = 'Main_Page' AND status < 400)
+  -- "saw the host page" means served as html: HEADs, 304s and action=history/edit views render no head markup
+  AND e.actor_hash NOT IN (SELECT actor_hash FROM events WHERE page_id = 'Main_Page' AND method = 'GET' AND status = 200 AND resource_kind = 'page')
 ORDER BY e.ts;
 ```

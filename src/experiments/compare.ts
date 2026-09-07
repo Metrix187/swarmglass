@@ -101,7 +101,7 @@ export function compareExperiment(db: Db, cat: Catalog, def: ExperimentDef, rang
   if (carrier) {
     out.tokens = Object.fromEntries(armTokens(def));
     out.unattributed = unattributedReaches(db, def, range, synthetic);
-    notes.push(`Each arm's carrier names the target with its own revision id (?${CARRIER_TOKEN_KEY}=). A fetch is credited to the arm whose id it carries, whichever actor makes it; exposed = sessions in the arm that fetched the host page, cross_actor = fetches by an actor that never saw the carrier itself.`);
+    notes.push(`Each arm's carrier names the target with its own revision id (?${CARRIER_TOKEN_KEY}=). A fetch is credited to the arm whose id it carries, whichever actor makes it; exposed = sessions in the arm that were served the host page as html (a HEAD, a 304, an alternate or an action view shows no carrier), cross_actor = fetches by an actor that never saw the carrier itself.`);
     if (out.unattributed.sessions) notes.push(`${out.unattributed.sessions} session(s) fetched the target with no carrier id (its own history links, a guessed title, or a client that strips query strings); they count in no arm.`);
   }
   return out;
@@ -134,10 +134,14 @@ function eventSynth(synthetic: Synth): string {
   return synthetic === 'all' ? '' : ` AND synthetic = ${synthetic === 'synthetic' ? 1 : 0}`;
 }
 
-// sessions and actors in the arm that actually saw the carrier: they fetched the host page
+// sessions and actors in the arm that actually saw the carrier: they were served the host page as html.
+// a HEAD, a 304, an alternate or an action view (history, edit, info) renders no head markup, and the
+// swarm walks exactly those once its frontier runs dry, so counting them would inflate exposed
+const SHOWN = "method = 'GET' AND status = 200 AND resource_kind = 'page'";
+
 function exposures(db: Db, def: ExperimentDef, armId: string, range: Range, synthetic: Synth): { sessions: Set<string>; actors: Set<string> } {
   const host = def.params?.host_page ?? '';
-  const rows = db.all<{ session_id: string; actor_hash: string }>(`SELECT DISTINCT session_id, actor_hash FROM events WHERE page_id = ? AND status < 400 AND cohorts_json LIKE ? AND ts >= ? AND ts <= ?${eventSynth(synthetic)}`, host, `%"${def.id}":"${armId}"%`, range.since, range.until);
+  const rows = db.all<{ session_id: string; actor_hash: string }>(`SELECT DISTINCT session_id, actor_hash FROM events WHERE page_id = ? AND ${SHOWN} AND cohorts_json LIKE ? AND ts >= ? AND ts <= ?${eventSynth(synthetic)}`, host, `%"${def.id}":"${armId}"%`, range.since, range.until);
   return { sessions: new Set(rows.map((r) => r.session_id)), actors: new Set(rows.map((r) => r.actor_hash)) };
 }
 
@@ -159,7 +163,7 @@ export function carrierLags(db: Db, def: ExperimentDef, armId: string, page: str
   const host = def.params?.host_page ?? '';
   const es = eventSynth(synthetic);
   const rows = db.all<{ ts: number; exposed_at: number | null }>(
-    `SELECT r.ts AS ts, (SELECT MAX(x.ts) FROM events x WHERE x.page_id = ? AND x.status < 400 AND x.cohorts_json LIKE ? AND x.ts <= r.ts${es}) AS exposed_at FROM (SELECT session_id, MIN(ts) AS ts FROM events WHERE page_id = ? AND status < 400 AND query_json LIKE ? AND ts >= ? AND ts <= ?${es} GROUP BY session_id) r`,
+    `SELECT r.ts AS ts, (SELECT MAX(x.ts) FROM events x WHERE x.page_id = ? AND x.${SHOWN.replaceAll(' AND ', ' AND x.')} AND x.cohorts_json LIKE ? AND x.ts <= r.ts${es}) AS exposed_at FROM (SELECT session_id, MIN(ts) AS ts FROM events WHERE page_id = ? AND status < 400 AND query_json LIKE ? AND ts >= ? AND ts <= ?${es} GROUP BY session_id) r`,
     host,
     `%"${def.id}":"${armId}"%`,
     page,

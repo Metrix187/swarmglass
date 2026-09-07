@@ -31,6 +31,10 @@ test('metadata_carrier reach is credited to the arm whose revision id the url ca
   session('s4', 'actor-4', 'A', t0 + 900_000);
   event('s4', 'actor-4', 'A', 'Main_Page', t0 + 900_000, null);
   event('s4', 'actor-4', 'A', 'Backup_2014_Restore_Notes', t0 + 960_000, { oldid: tok.get('A') as string });
+  // s5 in arm A only ever saw Main_Page's history view and a HEAD of it: neither renders the head markup, so no exposure
+  session('s5', 'actor-5', 'A', t0 + 1_200_000);
+  db.run("INSERT INTO events (ts, session_id, actor_hash, method, path, page_id, resource_kind, status, latency_ms, query_json, cohorts_json, synthetic) VALUES (?, 's5', 'actor-5', 'GET', '/wiki/Main_Page', 'Main_Page', 'special', 200, 1, ?, ?, 0)", t0 + 1_200_000, JSON.stringify({ action: 'history' }), JSON.stringify({ 'SGX-011': 'A' }));
+  db.run("INSERT INTO events (ts, session_id, actor_hash, method, path, page_id, resource_kind, status, latency_ms, cohorts_json, synthetic) VALUES (?, 's5', 'actor-5', 'HEAD', '/wiki/Main_Page', 'Main_Page', 'page', 200, 1, ?, 0)", t0 + 1_260_000, JSON.stringify({ 'SGX-011': 'A' }));
 
   const c = compareExperiment(db, { version: 'test' } as Catalog, def, { since: t0 - 1, until: t0 + 3_600_000 }, 'real');
   const a = c.arms.find((x) => x.arm === 'A');
