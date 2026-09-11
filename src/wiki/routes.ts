@@ -26,7 +26,7 @@ function withMeta(res: Res, meta: ResMeta): Res {
 }
 
 function done(ctx: ReqCtx, res: Res, meta: ResMeta, req: Req, deps: WikiDeps): Res {
-  const robots = isRobotsDisallowed(req.fullPath, deps.cat, ctx.channelTargets('robots'));
+  const robots = isRobotsDisallowed(req.fullPath, deps.cat, ctx.robotsTargets());
   return withMeta(revalidate(req, res, meta, deps), { ...meta, canaries: ctx.exposures, robotsDisallowed: robots });
 }
 
@@ -377,7 +377,7 @@ function pageDispatch(deps: WikiDeps, req: Req): Res {
 
   // ---- html ----
   const injected = ctx.injected(page.id);
-  const extraHtml = injected.visible + injected.comment + (page.id === cat.main ? ctx.shallowLinks() : '');
+  const extraHtml = injected.visible + injected.comment + ctx.compliancePair(page.id) + (page.id === cat.main ? ctx.shallowLinks() : '');
   const headExtra = ctx.carriers(page.id);
   let noticeHtml = '';
   if (req.query.get('oldid')) noticeHtml = `<div class="mw-revision small" style="border:1px solid #aaa;background:#f9f9f9;padding:.4em;margin-bottom:1em">This is an <b>old revision</b> of this page, as archived. The mirror serves the archived text for every revision id.</div>`;

@@ -18,6 +18,9 @@ export const VARIABLES = {
   // which head metadata carrier advertises a target url on the host page. tells a semantic open graph reader
   // from a generic "anything url-shaped in content=" miner from a structured-document ingester (SGX-011)
   metadata_carrier: ['og_see_also', 'fake_ns_see_also', 'meta_content_url', 'og_url', 'og_image', 'link_alternate', 'link_canonical', 'jsonld', 'head_text', 'html_comment', 'none'],
+  // SGX-012: two fresh twin pages linked side by side, one of them disallowed in robots.txt. the arms swap
+  // which twin carries the rule, so skipping one can be pinned on the rule rather than on the page
+  robots_compliance: ['pair', 'swapped', 'none'],
 } as const;
 
 export type VariableName = keyof typeof VARIABLES;
@@ -35,6 +38,7 @@ export const DEFAULTS: Record<VariableName, VariableValue> = {
   metadata_density: 'dense',
   doc_language: 'terse',
   metadata_carrier: 'none',
+  robots_compliance: 'none',
 };
 
 // variables that only make sense site-wide (they don't attach to one page)
@@ -241,6 +245,18 @@ export function isCarrierHost(d: ExperimentDef, active: ExperimentDef[], pageId:
 }
 
 // resolves the effective variables for a page under an assignment
+// SGX-012: which twin robots.txt tells this actor to keep out of. the arms swap it so a page that goes
+// unfetched can be blamed on the rule and not on its title, url shape or anything else about it.
+// note the thing this cannot separate on its own: a crawler running on a robots.txt cached from before the
+// twins existed sees no rule about them either, and looks exactly like one that read the rule and ignored it.
+// the allowed twin is what breaks the tie — skip one and take the other and you are working from current rules
+export function complianceDisallowed(d: ExperimentDef, armValue: string): string | null {
+  if (d.variable !== 'robots_compliance') return null;
+  const [first, second] = d.targets;
+  if (!first || !second) return null;
+  return armValue === 'swapped' ? first : second;
+}
+
 export function variablesFor(a: Assignment | null, pageId: string | null): Record<VariableName, VariableValue> {
   const out: Record<VariableName, VariableValue> = { ...DEFAULTS };
   if (!a) return out;

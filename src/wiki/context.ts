@@ -4,7 +4,7 @@ import type { Req } from '../http/server.ts';
 import type { Catalog, DiscoverClass, Page } from './content.ts';
 import type { CanaryService, Canary, Placement } from '../telemetry/canary.ts';
 import type { SessionState } from '../telemetry/session.ts';
-import { CARRIER_TOKEN_KEY, ExperimentRegistry, armByToken, armTokens, isCarrierHost, variablesFor, type Assignment, type VariableName, type VariableValue } from '../experiments/registry.ts';
+import { CARRIER_TOKEN_KEY, ExperimentRegistry, armByToken, armTokens, complianceDisallowed, isCarrierHost, variablesFor, type Assignment, type VariableName, type VariableValue } from '../experiments/registry.ts';
 import type { RenderCtx } from './render.ts';
 import { randomId } from '../util/hash.ts';
 import { esc } from '../http/html.ts';
@@ -33,6 +33,9 @@ export interface ReqCtx {
   injected(hostPageId: string): { visible: string; comment: string };
   shallowLinks(): string;
   carriers(hostPageId: string): string; // SGX-011: head markup advertising a target through one metadata carrier
+  compliancePair(hostPageId: string): string; // SGX-012: visible links to both twins, one of which robots.txt forbids
+  complianceDisallow(): Page | null; // SGX-012: the twin this actor's robots.txt disallows
+  robotsTargets(): Page[]; // everything robots.txt tells this actor to stay out of, experiment arms included
   channelTargets(channel: 'robots' | 'sitemap' | 'feed'): Page[];
   exposures: Canary[];
 }
@@ -176,6 +179,40 @@ export function reqCtx(deps: WikiDeps, req: Req): ReqCtx {
         }
       }
       return html;
+    },
+    compliancePair(hostPageId) {
+      let html = '';
+      for (const d of deps.registry.active()) {
+        if (d.variable !== 'robots_compliance' || !isCarrierHost(d, deps.registry.active(), hostPageId)) continue;
+        const armDef = d.arms.find((a) => a.id === assignment.cohorts[d.id]);
+        if (!armDef || armDef.value === 'none') continue;
+        const items: string[] = [];
+        for (const t of d.targets) {
+          const page = deps.cat.pages.get(t);
+          if (page) items.push(`<a href="${wikiHref(bp, t)}" title="${esc(page.title)}">${esc(page.title)}</a>`);
+        }
+        // both twins always ride together and in seed order, so the only thing telling them apart is robots.txt
+        if (items.length === d.targets.length && items.length) html += `<p class="small see-also">Rebuild queue: ${items.join(' · ')}.</p>
+`;
+      }
+      return html;
+    },
+    complianceDisallow() {
+      for (const d of deps.registry.active()) {
+        if (d.variable !== 'robots_compliance') continue;
+        const armDef = d.arms.find((a) => a.id === assignment.cohorts[d.id]);
+        if (!armDef) continue;
+        const id = complianceDisallowed(d, armDef.value);
+        const page = id ? deps.cat.pages.get(id) : undefined;
+        if (page) return page;
+      }
+      return null;
+    },
+    robotsTargets() {
+      const out = ctx.channelTargets('robots');
+      const twin = ctx.complianceDisallow();
+      if (twin && !out.some((p) => p.id === twin.id)) out.push(twin);
+      return out;
     },
     shallowLinks() {
       let html = '';

@@ -13,6 +13,17 @@ function base(deps: WikiDeps): string {
   return `${deps.cfg.public.baseUrl}${deps.cfg.public.basePath}`;
 }
 
+// SGX-012. the rule is dated in the file on purpose: these two pages did not exist before it, so a crawler
+// working from an older cached robots.txt has nothing about them either way, and the line below is the only
+// place the exclusion is ever stated
+function complianceLines(deps: WikiDeps, ctx: ReqCtx, bp: string): string[] {
+  const twin = ctx.complianceDisallow();
+  if (!twin) return [];
+  const d = deps.registry.active().find((x) => x.variable === 'robots_compliance');
+  const note = d?.params?.comment_text ?? 'drafts pending review';
+  return [`Disallow: ${wikiHref(bp, twin.id)}  # ${note}`];
+}
+
 export function robotsTxt(deps: WikiDeps, ctx: ReqCtx): string {
   const bp = deps.cfg.public.basePath;
   const c = ctx.canary(null, 'robots');
@@ -32,6 +43,7 @@ export function robotsTxt(deps: WikiDeps, ctx: ReqCtx): string {
     `Disallow: ${bp}/attachments/backup/`,
     `Disallow: ${bp}/api/`,
     ...targets.map((p) => `Disallow: ${wikiHref(bp, p.id)}  # archived drill notes, not for indexing`),
+    ...complianceLines(deps, ctx, bp),
     'Crawl-delay: 2',
     '',
     `Sitemap: ${base(deps)}/sitemap.xml`,

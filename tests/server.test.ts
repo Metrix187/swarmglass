@@ -415,3 +415,58 @@ test('an unknown path is a 404, not a 405 borrowed from the OPTIONS catch-all', 
   const ev = app.db.get<{ resource_kind: string; status: number }>("SELECT resource_kind, status FROM events WHERE path = '/admin' AND method = 'GET' ORDER BY ts DESC LIMIT 1");
   assert.equal(ev?.resource_kind, 'missing', 'scanner probes are recorded as dead links now');
 });
+
+test('SGX-012 links both twins together and forbids exactly one of them, swapping which', async () => {
+  const def = app.registry.get('SGX-012');
+  assert.ok(def);
+  const NOTES = 'Rebuild_Queue_Notes_2016';
+  const DRAFTS = 'Rebuild_Queue_Drafts_2016';
+  const forbidden = new Set<string>();
+  let paired = 0;
+  let unlinked = 0;
+
+  for (let i = 0; i < 16; i++) {
+    const ua = `robots-probe/${i}`;
+    const html = await (await get('/wiki/Colony_Glossary', { headers: { 'user-agent': ua } })).text();
+    const hasNotes = html.includes(`/wiki/${NOTES}`);
+    const hasDrafts = html.includes(`/wiki/${DRAFTS}`);
+    // the whole design rests on this: a twin is never shown on its own, or a skip means nothing
+    assert.equal(hasNotes, hasDrafts, `${ua} was shown one twin without the other`);
+    if (hasNotes) paired++; else unlinked++;
+
+    const robots = await (await get('/robots.txt', { headers: { 'user-agent': ua } })).text();
+    const dis = [NOTES, DRAFTS].filter((p) => robots.includes(`Disallow: /wiki/${p}`));
+    assert.equal(dis.length, 1, `${ua} should be forbidden exactly one twin, got ${dis.length}`);
+    forbidden.add(dis[0] as string);
+    assert.ok(robots.includes('added 2026-09-11'), 'the rule carries its date so a stale cache is distinguishable');
+  }
+
+  assert.ok(paired > 0 && unlinked > 0, 'expected both the linked arms and the control to show up across 16 actors');
+  assert.deepEqual([...forbidden].sort(), [DRAFTS, NOTES], 'both twins must take a turn being the forbidden one');
+});
+
+test('SGX-012 twins stay out of every machine channel, and a forbidden fetch is recorded as disallowed', async () => {
+  const NOTES = 'Rebuild_Queue_Notes_2016';
+  const DRAFTS = 'Rebuild_Queue_Drafts_2016';
+  // every surface that lists pages, not just the machine channels: the control arm only means something
+  // if the twins are genuinely unreachable except through the pair we inject
+  const surfaces = ['/sitemap.xml', '/sitemap-archive.xml', '/index/', '/feed.rss', '/wiki/Special:AllPages', '/wiki/Special:RecentChanges', '/wiki/Category:Operations', '/wiki/Category:Storage'];
+  for (const path of surfaces) {
+    const body = await (await get(path, { headers: { 'user-agent': 'robots-probe/chan' } })).text();
+    for (const p of [NOTES, DRAFTS]) assert.ok(!body.includes(p), `${p} must not appear in ${path}`);
+  }
+
+  // find an actor and fetch whichever twin its own robots.txt forbids
+  const ua = 'robots-probe/flagged';
+  const robots = await (await get('/robots.txt', { headers: { 'user-agent': ua } })).text();
+  const twin = [NOTES, DRAFTS].find((p) => robots.includes(`Disallow: /wiki/${p}`)) as string;
+  const other = twin === NOTES ? DRAFTS : NOTES;
+  assert.ok(twin);
+
+  assert.equal((await get(`/wiki/${twin}`, { headers: { 'user-agent': ua } })).status, 200);
+  assert.equal((await get(`/wiki/${other}`, { headers: { 'user-agent': ua } })).status, 200);
+  flush();
+  const flag = (page: string) => app.db.get<{ robots_disallowed: number }>('SELECT robots_disallowed FROM events WHERE page_id = ? ORDER BY ts DESC LIMIT 1', page)?.robots_disallowed;
+  assert.equal(flag(twin), 1, 'the forbidden twin must count against the session');
+  assert.equal(flag(other), 0, 'the allowed twin must not');
+});

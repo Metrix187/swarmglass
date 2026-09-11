@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
-import { ExperimentRegistry, armByToken, armTokens, isCarrierHost, pickArm, validateExperiment, variablesFor, type ExperimentDef } from '../src/experiments/registry.ts';
+import { ExperimentRegistry, armByToken, armTokens, complianceDisallowed, isCarrierHost, pickArm, validateExperiment, variablesFor, type ExperimentDef } from '../src/experiments/registry.ts';
 import { carrierMarkup } from '../src/wiki/context.ts';
 
 const def: ExperimentDef = {
@@ -111,4 +111,21 @@ test('a carrier hosted on every article leaves out the experiment targets', () =
   assert.ok(!isCarrierHost(sgx, active, 'Model_Compatibility_Matrix'), 'never on another experiment\'s target');
   const narrow = { ...sgx, params: { ...sgx.params, host_page: 'Main_Page' } };
   assert.ok(isCarrierHost(narrow, active, 'Main_Page') && !isCarrierHost(narrow, active, 'Colony_Glossary'), 'a named host is that page only');
+});
+
+test('SGX-012 arms swap which twin robots.txt forbids, and the twins never host the pair themselves', () => {
+  const reg = ExperimentRegistry.load(join(process.cwd(), 'config', 'experiments'));
+  const sgx = reg.get('SGX-012');
+  assert.ok(sgx);
+  const [notes, drafts] = sgx.targets;
+  const armValue = (id: string) => sgx.arms.find((a) => a.id === id)?.value as string;
+  assert.equal(complianceDisallowed(sgx, armValue('A')), drafts);
+  assert.equal(complianceDisallowed(sgx, armValue('B')), notes, 'the swap arm forbids the other twin');
+  assert.equal(complianceDisallowed(sgx, armValue('C')), drafts, 'the control still gets a rule, it just gets no links');
+  assert.equal(complianceDisallowed({ ...sgx, targets: [notes as string] }, 'pair'), null, 'a pair needs two');
+  // the pair rides on articles, never on either twin, or a client could find one by reading the other
+  const active = reg.active();
+  assert.ok(isCarrierHost(sgx, active, 'Colony_Glossary'));
+  for (const t of sgx.targets) assert.ok(!isCarrierHost(sgx, active, t), `${t} must not host the pair`);
+  assert.ok(!isCarrierHost(sgx, active, 'Backup_2014_Restore_Notes'), 'and not another experiment\'s target');
 });
