@@ -252,6 +252,9 @@ export function isCarrierHost(d: ExperimentDef, active: ExperimentDef[], pageId:
 // the allowed twin is what breaks the tie — skip one and take the other and you are working from current rules
 export function complianceDisallowed(d: ExperimentDef, armValue: string): string | null {
   if (d.variable !== 'robots_compliance') return null;
+  // the control arm gets no rule at all. shipped it the other way at first and that was just wrong:
+  // a Disallow line names the url, so the control was quietly handing out the very thing it exists not to give
+  if (armValue === 'none') return null;
   const [first, second] = d.targets;
   if (!first || !second) return null;
   return armValue === 'swapped' ? first : second;

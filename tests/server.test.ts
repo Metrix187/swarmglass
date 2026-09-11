@@ -436,9 +436,14 @@ test('SGX-012 links both twins together and forbids exactly one of them, swappin
 
     const robots = await (await get('/robots.txt', { headers: { 'user-agent': ua } })).text();
     const dis = [NOTES, DRAFTS].filter((p) => robots.includes(`Disallow: /wiki/${p}`));
-    assert.equal(dis.length, 1, `${ua} should be forbidden exactly one twin, got ${dis.length}`);
-    forbidden.add(dis[0] as string);
-    assert.ok(robots.includes('added 2026-09-11'), 'the rule carries its date so a stale cache is distinguishable');
+    if (hasNotes) {
+      assert.equal(dis.length, 1, `${ua} saw the pair so exactly one twin should be forbidden, got ${dis.length}`);
+      forbidden.add(dis[0] as string);
+      assert.ok(robots.includes('added 2026-09-11'), 'the rule carries its date so a stale cache is distinguishable');
+    } else {
+      // no links and no rule for the control, since a Disallow line names the url and hands it over anyway
+      assert.equal(dis.length, 0, `${ua} is on the control arm, robots.txt must not name either twin`);
+    }
   }
 
   assert.ok(paired > 0 && unlinked > 0, 'expected both the linked arms and the control to show up across 16 actors');

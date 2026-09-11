@@ -121,7 +121,7 @@ test('SGX-012 arms swap which twin robots.txt forbids, and the twins never host 
   const armValue = (id: string) => sgx.arms.find((a) => a.id === id)?.value as string;
   assert.equal(complianceDisallowed(sgx, armValue('A')), drafts);
   assert.equal(complianceDisallowed(sgx, armValue('B')), notes, 'the swap arm forbids the other twin');
-  assert.equal(complianceDisallowed(sgx, armValue('C')), drafts, 'the control still gets a rule, it just gets no links');
+  assert.equal(complianceDisallowed(sgx, armValue('C')), null, 'the control gets no rule either, a Disallow line is a url leak');
   assert.equal(complianceDisallowed({ ...sgx, targets: [notes as string] }, 'pair'), null, 'a pair needs two');
   // the pair rides on articles, never on either twin, or a client could find one by reading the other
   const active = reg.active();
