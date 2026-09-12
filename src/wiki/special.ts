@@ -171,21 +171,32 @@ export function specialVersion(cat: Catalog, r: RenderCtx): string {
   return simplePage(r, 'Version', html);
 }
 
+// what Special:SpecialPages puts on the menu
+export const SPECIAL_PAGES: Array<[string, string]> = [
+  ['Special:AllPages', 'All pages'],
+  ['Special:Categories', 'Categories'],
+  ['Special:RecentChanges', 'Recent changes'],
+  ['Special:Random', 'Random page'],
+  ['Special:Search', 'Search'],
+  ['Special:Statistics', 'Statistics'],
+  ['Special:Version', 'Version'],
+  ['Special:ListUsers', 'User list'],
+  ['Special:Log', 'Logs'],
+  ['Special:Export', 'Export pages'],
+  ['Special:UserLogin', 'Log in'],
+];
+
+// everything the router will actually answer. the three extras take an argument or just list the others,
+// so they are served but stay off the menu. seed-check reads this to tell a real special link from a typo
+export const SERVED_SPECIALS = new Set<string>([
+  ...SPECIAL_PAGES.map(([id]) => id),
+  'Special:RecentChangesLinked',
+  'Special:WhatLinksHere',
+  'Special:SpecialPages',
+]);
+
 export function specialSpecialPages(r: RenderCtx): string {
-  const items: Array<[string, string]> = [
-    ['Special:AllPages', 'All pages'],
-    ['Special:Categories', 'Categories'],
-    ['Special:RecentChanges', 'Recent changes'],
-    ['Special:Random', 'Random page'],
-    ['Special:Search', 'Search'],
-    ['Special:Statistics', 'Statistics'],
-    ['Special:Version', 'Version'],
-    ['Special:ListUsers', 'User list'],
-    ['Special:Log', 'Logs'],
-    ['Special:Export', 'Export pages'],
-    ['Special:UserLogin', 'Log in'],
-  ];
-  return simplePage(r, 'Special pages', `<ul>${items.map(([id, label]) => `<li><a href="${r.basePath}/wiki/${id}">${esc(label)}</a></li>`).join('')}</ul>`);
+  return simplePage(r, 'Special pages', `<ul>${SPECIAL_PAGES.map(([id, label]) => `<li><a href="${r.basePath}/wiki/${id}">${esc(label)}</a></li>`).join('')}</ul>`);
 }
 
 export function specialListUsers(cat: Catalog, r: RenderCtx): string {

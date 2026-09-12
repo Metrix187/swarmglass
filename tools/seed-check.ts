@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 import { loadCatalog, resolveAlias } from '../src/wiki/content.ts';
 import { ExperimentRegistry } from '../src/experiments/registry.ts';
+import { SERVED_SPECIALS } from '../src/wiki/special.ts';
 import { cfgFor, parseArgs } from './_cli.ts';
 
 // lints the seed: broken links that are not deliberate, experiment targets that leak,
@@ -19,6 +20,11 @@ for (const p of cat.pages.values()) {
   for (const l of p.links) {
     const [target] = l.split('#');
     if (!target) continue;
+    // the Special: namespace belongs to the router, not the catalog, so check it against what the router answers
+    if (target.startsWith('Special:')) {
+      if (!SERVED_SPECIALS.has(target)) warnings.push(`${p.id}: link to a special page nothing serves [[${target}]]`);
+      continue;
+    }
     if (!resolveAlias(cat.pages, target) && !DELIBERATE_DEAD.has(target)) warnings.push(`${p.id}: link to missing page [[${target}]] (fine if deliberate; add to DELIBERATE_DEAD)`);
   }
   if (!p.categories.length && p.kind === 'article' && !p.id.includes(':')) warnings.push(`${p.id}: no categories`);

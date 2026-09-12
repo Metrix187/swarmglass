@@ -76,6 +76,17 @@ test('extractLinks separates visible from comment links', () => {
   assert.deepEqual(r.comments, ['B']);
 });
 
+test('extractLinks ignores wiki links that are only being demonstrated in code', () => {
+  // Help:Editing documents the syntax. it is not linking to a page called "Page name"
+  const src = ['`[[Page name]]` links to a page. See [[Getting_Started]].', '```', '[[Fenced]]', '```'].join('\n');
+  assert.deepEqual(extractLinks(src).visible, ['Getting_Started']);
+
+  // and the extractor has to agree with the renderer, which stashes code spans before it linkifies
+  const html = renderMarkdown('`[[Page name]]` and [[Real_Page]]', hooks).html;
+  assert.ok(!html.includes('/wiki/Page_name'), 'a code span must not render as a link');
+  assert.ok(html.includes('/wiki/Real_Page'), 'but a bare one still does');
+});
+
 test('frontmatter parser handles lists, nested objects, booleans', () => {
   const { meta, body } = parseFrontmatter(`---
 id: X
