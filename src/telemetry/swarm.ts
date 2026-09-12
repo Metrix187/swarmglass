@@ -44,6 +44,9 @@ export type Swarm = ClusterResult & { summary: SwarmSummary };
 
 export const SWARM_MIN_SESSIONS = 12;
 export const SWARM_MIN_PREFIXES = 8;
+// how many /16-ish blocks counts as "scattered everywhere" on its own. amazonbot sat at 173 the day this
+// went in, SW-E6F2B0 at 31, and a nat big enough to reach this would be several ISPs in a trenchcoat
+export const SWARM_WIDE_BLOCKS = 24;
 
 // "43.130.67.0/24" -> "43.130"; "2a02:1234:5678::/48" -> "2a02:1234". coarse on purpose, it only counts
 export function widePrefix(p: string): string {
@@ -64,8 +67,13 @@ export function detectSwarms(sessions: SwarmSession[]): Swarm[] {
   for (const members of groups.values()) {
     if (members.length < SWARM_MIN_SESSIONS) continue;
     const prefixes = new Set(members.map((m) => m.ip_trunc).filter((p): p is string => Boolean(p)));
-    // a pool, not a couple of nats: most sessions have to come from somewhere new
-    if (prefixes.size < SWARM_MIN_PREFIXES || prefixes.size / members.length < 0.5) continue;
+    if (prefixes.size < SWARM_MIN_PREFIXES) continue;
+    const prefixes16 = new Set([...prefixes].map(widePrefix)).size;
+    // a pool, not a couple of nats: most sessions have to come from somewhere new. a fleet that grows its
+    // traffic faster than it rents addresses fails that even while obviously being a fleet, which is how
+    // amazonbot dropped off the radar at 1620 sessions over 419 prefixes. so let a pool that is scattered
+    // wide enough in on the spread alone, and keep the ratio for everyone below that
+    if (prefixes.size / members.length < 0.5 && prefixes16 < SWARM_WIDE_BLOCKS) continue;
     const single = members.filter((m) => m.n_requests <= 2).length / members.length;
     if (single < 0.6) continue;
     const requests = members.reduce((a, m) => a + m.n_requests, 0);
@@ -88,7 +96,6 @@ export function detectSwarms(sessions: SwarmSession[]): Swarm[] {
         touched++;
       }
     }
-    const prefixes16 = new Set([...prefixes].map(widePrefix)).size;
     const lead = members[0] as SwarmSession;
 
     const signals: Signal[] = [

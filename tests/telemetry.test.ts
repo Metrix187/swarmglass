@@ -262,6 +262,22 @@ test('swarm detector: one client signature across many addresses, one hit each',
   assert.equal(detectSwarms([...Array.from({ length: 8 }, (_, i) => mk(i)), ...Array.from({ length: 8 }, (_, i) => mk(100 + i, { synthetic: true }))]).length, 0);
 });
 
+test('swarm detector: a fleet that reuses addresses still counts if the pool is scattered wide enough', () => {
+  // amazonbot's shape on 2026-09-12: volume grew, the address pool did not keep up, and the old
+  // ratio-only gate quietly dropped it at 1620 sessions over 419 prefixes
+  const mk = (i: number, blocks: number): SwarmSession => ({
+    id: 'r' + i, started_at: i * 300_000, last_seen_at: i * 300_000 + 80,
+    ip_trunc: `43.${i % blocks}.${i % 40}.0/24`, ua_hash: 'ua2', ua_family: 'amazonbot',
+    ua: 'Mozilla/5.0 (compatible; Amazonbot/0.1)', n_requests: 1, n_subresources: 0, n_conditional: 0,
+    synthetic: false, pages: new Set(['P' + i]),
+  });
+  const wide = detectSwarms(Array.from({ length: 200 }, (_, i) => mk(i, 40)));
+  assert.equal(wide.length, 1, 'a pool across 40 wider blocks is a pool however often it reuses an address');
+  assert.ok(wide[0]!.summary.prefixes / wide[0]!.members.length < 0.5, 'and it got in below the old ratio floor');
+  // same reuse, same session count, but huddled in four blocks: that is what a nat looks like, still out
+  assert.equal(detectSwarms(Array.from({ length: 200 }, (_, i) => mk(i, 4))).length, 0);
+});
+
 test('features + heuristics: a browser string that sends Pragma on every request and never renders loses its human points', () => {
   const h = loadHeuristics(join(process.cwd(), 'config', 'heuristics.json'));
   validateHeuristics(h);
