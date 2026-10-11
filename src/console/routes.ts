@@ -66,14 +66,29 @@ export function buildConsoleRouter(deps: ConsoleDeps): Router {
 
   // a state change has to come from the console's own origin. the csrf token already settles that for the api;
   // this asks the browser the same question in its own words, and it is the only guard the login form has.
-  // no Origin at all (curl, older clients) is allowed through, the token still applies
-  const crossSite = (req: Req): boolean => {
-    if ((req.headers['sec-fetch-site'] ?? '').toLowerCase() === 'cross-site') return true;
-    const origin = req.headers['origin'];
-    if (origin === undefined) return false;
-    if (origin === 'null') return true;
+  // the browser's Origin is judged against the Host the request arrived with and against the configured base
+  // urls, since a proxy that rewrites Host (or a dev setup that mixes localhost and 127.0.0.1) would otherwise
+  // lock the operator out. no Origin at all (curl, older clients) is allowed through, the token still applies;
+  // Sec-Fetch-Site only decides when there is no Origin to judge
+  const ownHosts = new Set<string>();
+  for (const u of [deps.cfg.console.baseUrl, deps.cfg.public.baseUrl]) {
     try {
-      return new URL(origin).host.toLowerCase() !== req.host.toLowerCase();
+      ownHosts.add(new URL(u).host.toLowerCase());
+    } catch {
+      // unset or malformed base url: nothing to add
+    }
+  }
+  const crossSite = (req: Req): boolean => {
+    const origin = req.headers['origin'];
+    // no Origin at all (curl, older clients), or Origin: null. null is not an attacker's tell here: the console
+    // sends Referrer-Policy: no-referrer, and under that policy a browser serialises the Origin of its own
+    // same-origin POSTs as "null" (fetch spec, "append a request Origin header"). every button on the settings
+    // page and the login form itself arrive that way. Sec-Fetch-Site is what is left to judge by, and the csrf
+    // token still applies to the api
+    if (origin === undefined || origin === 'null') return (req.headers['sec-fetch-site'] ?? '').toLowerCase() === 'cross-site';
+    try {
+      const host = new URL(origin).host.toLowerCase();
+      return host !== req.host.toLowerCase() && !ownHosts.has(host);
     } catch {
       return true;
     }
@@ -103,7 +118,11 @@ export function buildConsoleRouter(deps: ConsoleDeps): Router {
   r.post('/login', (req) => {
     const g = gate(req);
     if (g) return g;
-    if (crossSite(req)) return wrap(htmlRes(403, loginPage(deps.cfg, 'Sign-in refused: the request did not come from this console.')));
+    if (crossSite(req)) {
+      // an operator locked out by a proxy that rewrites Host needs to see exactly what arrived
+      deps.log.warn('console login refused as cross-site', { ip: req.clientIp, host: req.host, origin: (req.headers['origin'] ?? '').slice(0, 120), sec_fetch_site: req.headers['sec-fetch-site'] ?? '' });
+      return wrap(htmlRes(403, loginPage(deps.cfg, 'Sign-in refused: the request did not come from this console.')));
+    }
     if (!auth.loginAllowed(req.clientIp)) return wrap(htmlRes(429, loginPage(deps.cfg, 'Too many attempts. Wait ten minutes.'), { 'retry-after': '600' }));
     const form = new URLSearchParams(req.body?.toString('utf8') ?? '');
     const user = (form.get('user') ?? '').slice(0, 64);
@@ -221,6 +240,7 @@ export function buildConsoleRouter(deps: ConsoleDeps): Router {
       cluster: rq.query.get('cluster'),
       experiment: rq.query.get('experiment'),
       arm: rq.query.get('arm'),
+      signature: rq.query.get('signature'),
       minRequests: Number(rq.query.get('min_requests') ?? 0) || 0,
       limit: Math.min(500, Number(rq.query.get('limit') ?? 100) || 100),
       offset: Number(rq.query.get('offset') ?? 0) || 0,
@@ -236,6 +256,14 @@ export function buildConsoleRouter(deps: ConsoleDeps): Router {
     const d = q.clusterDetail(qd, rq.params.id ?? '');
     return d ? j(200, d) : j(404, { error: 'no such cluster' });
   }), 'cluster');
+  r.get('/api/history', (req) => requireAuth(req, (rq) => j(200, { days: q.dailyHistory(qd, Math.min(120, Math.max(1, Number(rq.query.get('days') ?? 30) || 30)), synth(rq)) })), 'history');
+  r.get('/api/signatures', (req) => requireAuth(req, (rq) => j(200, { signatures: q.signatures(qd, range(rq), synth(rq)) })), 'signatures');
+  r.get('/api/actors/:hash', (req) => requireAuth(req, (rq) => {
+    const hash = rq.params.hash ?? '';
+    if (!/^[a-f0-9]{8,64}$/.test(hash)) return j(400, { error: 'not an actor hash' });
+    const d = q.actorDetail(qd, hash);
+    return d ? j(200, d) : j(404, { error: 'no such actor' });
+  }), 'actor');
   r.get('/api/pages', (req) => requireAuth(req, (rq) => j(200, { pages: q.pageFunnel(qd, range(rq), synth(rq)) })), 'pages');
   r.get('/api/pages/:id/timing', (req) => requireAuth(req, (rq) => j(200, q.timeToPage(qd, rq.params.id ?? '', range(rq), synth(rq)))), 'page_timing');
   r.get('/api/discovery', (req) => requireAuth(req, (rq) => j(200, q.discoveryMatrix(qd, range(rq), synth(rq)))), 'discovery');

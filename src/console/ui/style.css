@@ -89,6 +89,8 @@ svg .axis { stroke: var(--hair-2); }
 .kv dd { margin: 0; overflow-wrap: anywhere; }
 .matrix td { text-align: center; font-family: var(--mono); }
 .matrix td.hot { color: #fff; }
+.matrix.compact th, .matrix.compact td { padding: 2px 3px; font-size: 10px; }
+.inlinebar .bar { display: inline-block; width: 90px; vertical-align: middle; margin-right: 6px; }
 .graph { width: 100%; height: 360px; border: 1px solid var(--hair); border-radius: 8px; background: var(--white); }
 pre { background: var(--paper-2); border: 1px solid var(--hair); border-radius: 8px; padding: 10px; overflow: auto; font-size: 11.5px; max-height: 420px; }
 .rowlink { cursor: pointer; }

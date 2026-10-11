@@ -72,7 +72,7 @@ Things that bit during the first deploy, now baked into `install.sh`: `caddy has
 | backup | `sqlite3 data/swarmglass.db ".backup data/backup-$(date +%F).db"` (or copy the file while the app is stopped) |
 | retention purge now | `docker compose exec swarmglass node --disable-warning=ExperimentalWarning tools/purge.ts --vacuum` |
 | rescore after editing heuristics | `docker compose exec swarmglass node --disable-warning=ExperimentalWarning tools/rescore.ts` |
-| report | `docker compose exec swarmglass node --disable-warning=ExperimentalWarning tools/report.ts --experiment SGX-001 --range 30d` → `/data/../reports` inside the container is read-only; use `--out /data/reports` |
+| report | `docker compose exec swarmglass node --disable-warning=ExperimentalWarning tools/report.ts --experiment SGX-001 --range 30d --out /data/reports` (the root filesystem is read-only; the console's *generate observation report* button writes to `SWARMGLASS_REPORTS_DIR`, default `/data/reports`, on its own) |
 | health | `GET /api/v1/status` on 8080 (public, also the Docker healthcheck); `GET /healthz` on 8081 |
 | disk | the disk guard degrades writes at 90% of `SWARMGLASS_MAX_DB_MB` and purges the oldest 10% of events at 100%; the console's settings page shows the state |
 

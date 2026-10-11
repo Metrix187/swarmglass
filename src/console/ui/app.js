@@ -10,6 +10,10 @@
     if (attrs) for (const [k, v] of Object.entries(attrs)) {
       if (k === 'class') el.className = v;
       else if (k === 'html') el.innerHTML = v; // only used with html we generate ourselves (svg)
+      // the console's csp has style-src 'self' and no 'unsafe-inline', and a style *attribute* counts as inline:
+      // setAttribute('style') was refused on every bar and heat cell, so each bar rendered at full width whatever
+      // its value. writing through the cssom is not inline style and is allowed
+      else if (k === 'style') el.style.cssText = v;
       else if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
       else if (v !== null && v !== undefined) el.setAttribute(k, String(v));
     }
@@ -145,9 +149,34 @@
     g.appendChild(withSpan(card('recent canary sightings', d.recent_sightings.length ? table([{ label: 'when', render: (r) => fmtTs(r.ts) }, { label: 'canary', render: (r) => h('code', null, r.canary_id.replace('QUANTARA-SWARMGLASS-', '…')) }, { label: 'seen in', key: 'seen_in' }, { label: 'session', render: (r) => r.session_id ? sid(r.session_id) : tag('external', 'lilac') }, { label: 'flags', render: (r) => [r.cross_session ? tag('cross-session', 'rose') : null, r.cross_actor ? tag('cross-actor', 'bad') : null] }], d.recent_sightings) : h('p', { class: 'muted' }, 'none in range')), 'span4'));
     g.appendChild(withSpan(card('active experiments', d.experiments.length ? table([{ label: 'id', render: (r) => link('#/experiment/' + r.id, r.id) }, { label: 'name', key: 'name' }, { label: 'variable', key: 'variable' }, { label: 'arms', key: 'arms', num: true }], d.experiments) : h('p', { class: 'muted' }, 'none active')), 'span6'));
     g.appendChild(withSpan(card('storage', d.disk ? kv({ state: d.disk.degraded ? `DEGRADED (${d.disk.reason})` : 'ok', 'db size': `${(d.disk.dbBytes / 1048576).toFixed(1)} MB of ${(d.disk.limitBytes / 1048576).toFixed(0)} MB` }) : h('p', { class: 'muted' }, 'disk guard has not run yet')), 'span6'));
+    g.appendChild(withSpan(card('activity by hour (utc) × weekday, requests in range', activityHeat(d.activity)), 'span12'));
+    const hist = await api(`/api/history?days=30&synthetic=${encodeURIComponent(state.synthetic)}`);
+    g.appendChild(withSpan(card('the last 30 days, from the daily rollups (these outlive the retention window; the traffic filter applies, the range does not)', historyTable(hist.days)), 'span12'));
   };
   function stat(v, k) { return h('div', { class: 'card stat' }, h('span', { class: 'v' }, num(v)), h('span', { class: 'k' }, k)); }
   function withSpan(el, cls) { el.classList.add(cls); return el; }
+  function activityHeat(a) {
+    if (!a || !a.total) return h('p', { class: 'muted' }, 'no requests in range');
+    const t = heatTable(a.rows, a.cols, a.cells, { corner: 'day \\ hour' });
+    t.querySelector('table').classList.add('compact');
+    return [t, h('p', { class: 'hint' }, `${a.total.toLocaleString()} requests · busiest cell ${a.peak.toLocaleString()} · a pool that keeps office hours somewhere shows up as a band`)];
+  }
+  function historyTable(days) {
+    if (!days || !days.length) return h('p', { class: 'muted' }, 'no rollups yet — the rollup job runs every ten minutes');
+    const max = Math.max(1, ...days.map((x) => x.requests));
+    return table([
+      { label: 'day', key: 'day' },
+      { label: 'requests', render: (r) => [h('span', { class: 'inlinebar' }, bar(r.requests, max)), num(r.requests)] },
+      { label: 'sessions', key: 'sessions', num: true },
+      { label: 'errors', key: 'errors', num: true },
+      { label: 'sightings', key: 'canary_sightings', num: true },
+      { label: 'likely classes', render: (r) => Object.entries(r.by_class).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([k, v]) => tag(`${k.replace(/_/g, ' ')} ${v}`)) },
+      { label: 'kinds', render: (r) => Object.entries(r.by_kind).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([k, v]) => tag(`${k} ${v}`, 'lilac')) },
+    ], [...days].reverse());
+  }
+  function deadTable(rows) {
+    return (rows || []).length ? table([{ label: 'path', render: (r) => h('code', null, r.path) }, { label: 'requests', key: 'n', num: true }, { label: 'sessions', key: 's', num: true }], rows) : h('p', { class: 'muted' }, 'none in range');
+  }
 
   views.live = async (root) => {
     const hint = state.synthetic === 'real' ? 'real traffic only, per the filter above' : state.synthetic === 'synthetic' ? 'synthetic traffic only, per the filter above' : 'all traffic; synthetic rows are dimmed';
@@ -191,15 +220,15 @@
   };
 
   views.sessions = async (root, params) => {
-    const f = Object.assign({ class: '', family: '', q: '', sort: 'recent', min_requests: '', offset: 0, cluster: '', experiment: '', arm: '' }, params || {});
+    const f = Object.assign({ class: '', family: '', q: '', sort: 'recent', min_requests: '', offset: 0, cluster: '', experiment: '', arm: '', signature: '' }, params || {});
     root.append(h('h1', null, 'sessions'));
     const form = h('div', { class: 'filters' },
       h('label', null, 'class ', sel('class', ['', 'human_browser', 'search_bot', 'naive_crawler', 'aggressive_crawler', 'scripted_agent', 'retrieval_agent', 'tool_discovery_agent', 'unknown'], f.class)),
       h('label', null, 'sort ', sel('sort', ['recent', 'requests', 'pages', 'confidence', 'hidden'], f.sort)),
       h('label', null, 'min requests ', h('input', { type: 'text', name: 'min_requests', value: f.min_requests, size: 3 })),
       h('label', null, 'search ', h('input', { type: 'search', name: 'q', value: f.q, placeholder: 'id, ua, path' })),
-      f.cluster ? tag('cluster ' + f.cluster, 'lilac') : null, f.experiment ? tag(`${f.experiment}${f.arm ? ':' + f.arm : ''}`, 'lilac') : null,
-      h('button', { onclick: () => { const p = {}; for (const el of form.querySelectorAll('select,input')) if (el.value) p[el.name] = el.value; if (f.cluster) p.cluster = f.cluster; if (f.experiment) p.experiment = f.experiment; if (f.arm) p.arm = f.arm; location.hash = '#/sessions?' + new URLSearchParams(p).toString(); } }, 'apply'));
+      f.cluster ? tag('cluster ' + f.cluster, 'lilac') : null, f.experiment ? tag(`${f.experiment}${f.arm ? ':' + f.arm : ''}`, 'lilac') : null, f.signature ? link('#/signatures', tag('signature ' + f.signature, 'lilac')) : null,
+      h('button', { onclick: () => { const p = {}; for (const el of form.querySelectorAll('select,input')) if (el.value) p[el.name] = el.value; if (f.cluster) p.cluster = f.cluster; if (f.experiment) p.experiment = f.experiment; if (f.arm) p.arm = f.arm; if (f.signature) p.signature = f.signature; location.hash = '#/sessions?' + new URLSearchParams(p).toString(); } }, 'apply'));
     root.appendChild(form);
     const q = new URLSearchParams(Object.assign({}, f, { limit: 100 }));
     const d = await api(`/api/sessions?${qs()}&${q.toString()}`);
@@ -231,7 +260,7 @@
       h('ul', { class: 'caveats' }, st.caveats.map((c) => h('li', null, c))));
     const grid = h('div', { class: 'grid' });
     root.appendChild(grid);
-    grid.appendChild(withSpan(card('facts', kv({ started: fmtTs(s.started_at), 'last seen': fmtTs(s.last_seen_at), duration: fmtRel(s.last_seen_at - s.started_at), kind: s.kind, 'network prefix': s.ip_trunc || '(not stored)', 'user-agent': s.ua || '(none)', 'cookie returned': s.cookie_returned ? 'yes' : 'no', requests: s.n_requests, 'unique pages': s.n_unique_pages, 'max depth': s.max_depth, 'machine fetches': s.n_machine, 'disallowed fetches': s.n_disallowed, errors: s.n_errors, 'first referer host': s.first_referer_host || '—', actor: s.actor_hash, 'other sessions of actor': d.actor_sessions.length })), 'span4'));
+    grid.appendChild(withSpan(card('facts', kv({ started: fmtTs(s.started_at), 'last seen': fmtTs(s.last_seen_at), duration: fmtRel(s.last_seen_at - s.started_at), kind: s.kind, 'network prefix': s.ip_trunc || '(not stored)', 'user-agent': s.ua || '(none)', 'cookie returned': s.cookie_returned ? 'yes' : 'no', requests: s.n_requests, 'unique pages': s.n_unique_pages, 'max depth': s.max_depth, 'machine fetches': s.n_machine, 'disallowed fetches': s.n_disallowed, errors: s.n_errors, 'first referer host': s.first_referer_host || '—', actor: s.actor_hash, 'other sessions of actor': d.actor_sessions.length }), h('p', { class: 'hint' }, link('#/actor/' + encodeURIComponent(s.actor_hash), 'every session of this actor, and what it carried between them →'))), 'span4'));
     if (s.scores) {
       const traits = Object.entries(s.scores.traits).map(([k, v]) => ({ label: k.replace(/_/g, ' '), value: v.value }));
       grid.appendChild(withSpan(card('traits (heuristic, 0–1)', hbars(traits, { fmt: (v) => v.toFixed(2) })), 'span4'));
@@ -289,6 +318,7 @@
     const swarm = d.kind === 'swarm';
     root.append(h('h1', null, swarm ? 'swarm ' : 'cohort ', h('code', null, d.id)), h('p', null, tag(d.label, swarm ? 'bad' : 'lilac'), ` swarm score ${d.swarm_score.toFixed(2)} · ${d.size} sessions`));
     root.appendChild(card('signals', h('ul', { class: 'evidence' }, d.signals.map((s) => h('li', null, h('span', { class: 'w' }, s.strength.toFixed(2)), ` ${s.signal.replace(/_/g, ' ')}: ${s.note}`)))));
+    root.appendChild(card('activity by hour (utc) × weekday, every request by a member', activityHeat(d.activity)));
     const members = d.members.map((m) => m.id);
     const pages = Object.keys(d.page_matrix).sort();
     if (swarm) {
@@ -405,9 +435,45 @@
     g.appendChild(withSpan(card('heavy sessions (≥200 requests)', table([{ label: 'session', render: (r) => sid(r.session_id) }, { label: 'requests', key: 'n', num: true }, { label: 'ua', render: (r) => tag(r.ua_family || '') }], d.heavy_sessions)), 'span4'));
     g.appendChild(withSpan(card('non-GET methods', table([{ label: 'method', key: 'method' }, { label: 'n', key: 'n', num: true }], d.methods)), 'span4'));
     g.appendChild(withSpan(card('write attempts', table([{ label: 'when', render: (r) => fmtTs(r.ts) }, { label: 'session', render: (r) => sid(r.session_id) }, { label: 'path', render: (r) => h('code', null, r.path) }, { label: 'status', key: 'status', num: true }, { label: 'body', render: (r) => `${r.body_bytes} B ${r.body_ctype || ''}` }], d.posts)), 'span6'));
-    g.appendChild(withSpan(card('most requested missing paths', table([{ label: 'path', render: (r) => h('code', null, r.path) }, { label: 'requests', key: 'n', num: true }, { label: 'sessions', key: 's', num: true }], d.dead_paths)), 'span6'));
-    g.appendChild(withSpan(card('probe-like patterns', table([{ label: 'when', render: (r) => fmtTs(r.ts) }, { label: 'session', render: (r) => sid(r.session_id) }, { label: 'path', render: (r) => h('code', null, r.path.slice(0, 80)) }, { label: 'status', key: 'status', num: true }], d.probes)), 'span6'));
+    g.appendChild(withSpan(card('scanner sessions (three or more misses from the secrets-and-panels alphabet: .env, .git, wp-*, phpmyadmin, backup dumps…)', (d.scanners || []).length ? table([{ label: 'started', render: (r) => fmtTs(r.started_at) }, { label: 'session', render: (r) => sid(r.session_id) }, { label: 'ua', render: (r) => tag(r.ua_family || '') }, { label: 'requests', key: 'requests', num: true }, { label: 'misses', key: 'missing', num: true }, { label: 'scanner paths', key: 'scanner_hits', num: true }, { label: 'sample', render: (r) => r.sample.map((p) => [h('code', null, p), ' ']) }], d.scanners, { link: (r) => '#/session/' + encodeURIComponent(r.session_id) }) : h('p', { class: 'muted' }, 'none in range')), 'span12'));
+    g.appendChild(withSpan(card('scanner paths asked for', deadTable(d.scanner_paths)), 'span4'));
+    g.appendChild(withSpan(card('other missing paths (nothing on the site points at these)', deadTable(d.dead_paths)), 'span4'));
+    g.appendChild(withSpan(card('red links followed (/wiki/ pages that do not exist; every page links a Discussion tab, most have no talk page)', deadTable(d.red_links)), 'span4'));
+    g.appendChild(withSpan(card('probe-like requests (injection patterns and scanner paths, flagged on the way in)', table([{ label: 'when', render: (r) => fmtTs(r.ts) }, { label: 'session', render: (r) => sid(r.session_id) }, { label: 'path', render: (r) => h('code', null, r.path.slice(0, 80)) }, { label: 'status', key: 'status', num: true }], d.probes)), 'span6'));
     g.appendChild(withSpan(card('search queries typed into the wiki', table([{ label: 'query', render: (r) => h('code', null, r.q || '') }, { label: 'n', key: 'n', num: true }], d.searches)), 'span6'));
+  };
+
+  views.signatures = async (root) => {
+    const d = await api(`/api/signatures?${qs()}`);
+    root.append(h('h1', null, 'client signatures'), note('a signature is the order a client sends its request headers in. a user-agent is a string anyone can set; the header order is set by the http stack and rarely touched. one order behind several user-agent strings is one client wearing masks, which is the thing the swarm detector cannot see, since it groups by the mask. signatures shared by two or more sessions, most sessions first.'));
+    if (!d.signatures.length) { root.append(h('p', { class: 'muted' }, 'no signature shared by two sessions in range')); return; }
+    root.appendChild(card('signatures', table([
+      { label: 'signature', render: (r) => h('code', null, r.signature) },
+      { label: 'reads as', render: (r) => [r.masks ? tag(`${r.ua_strings} user-agent strings`, 'bad') : null, r.spread ? tag('many prefixes, one hit each', 'rose') : null, !r.masks && !r.spread ? tag('one client string') : null] },
+      { label: 'sessions', render: (r) => link('#/sessions?signature=' + encodeURIComponent(r.signature), String(r.sessions)) },
+      { label: 'actors', key: 'actors', num: true }, { label: 'requests', key: 'requests', num: true }, { label: 'prefixes', key: 'prefixes', num: true }, { label: 'pages', key: 'pages', num: true },
+      { label: 'families', render: (r) => r.families.map((f) => tag(f)) },
+      { label: 'first', render: (r) => fmtTs(r.first_seen) }, { label: 'last', render: (r) => fmtTs(r.last_seen) },
+      { label: 'headers, in wire order', render: (r) => h('code', { class: 'small' }, r.header_names.join(' → ')) },
+      { label: 'user-agent strings (sessions)', render: (r) => h('ul', { class: 'evidence' }, r.ua_samples.map((u) => h('li', null, h('span', { class: 'w' }, String(u.sessions)), ' ', h('code', null, u.ua || '(none)')))) },
+    ], d.signatures)));
+  };
+
+  views.actor = async (root, params, hash) => {
+    const d = await api(`/api/actors/${encodeURIComponent(hash)}`);
+    if (d.error) { root.append(h('p', { class: 'error' }, d.error)); return; }
+    const s = d.summary;
+    root.append(h('h1', null, 'actor ', h('code', null, d.actor_hash)), note('one actor fingerprint (network prefix + user-agent string), every session it had. the question this page asks is memory: did a later session go straight to pages only an earlier one was shown, and did it present a canary it was shown last time? the fingerprint is coarse on purpose; one corporate nat is one actor.'));
+    const g = h('div', { class: 'grid' }); root.appendChild(g);
+    g.appendChild(withSpan(card('summary', kv({ sessions: s.sessions, 'first seen': fmtTs(s.first_seen), 'last seen': fmtTs(s.last_seen), requests: s.requests, 'distinct pages': s.distinct_pages, 'pages seen in more than one session': s.pages_seen_in_more_than_one_session, 'canaries shown': s.canaries_exposed, 'canaries carried across sessions': s.canaries_carried_across_sessions, 'user-agent strings': s.ua_strings, 'network prefixes': s.prefixes, classes: Object.entries(s.classes).map(([k, v]) => `${k.replace(/_/g, ' ')} ${v}`).join(', ') })), 'span4'));
+    g.appendChild(withSpan(card('sessions, in order', table([{ label: 'started', render: (r) => fmtTs(r.started_at) }, { label: 'session', render: (r) => sid(r.id) }, { label: 'class', render: (r) => classTag(r.likely_class) }, { label: 'req', key: 'n_requests', num: true }, { label: 'pages', key: 'n_unique_pages', num: true }, { label: 'machine', key: 'n_machine', num: true }, { label: 'cookie', render: (r) => r.cookie_returned ? tag('yes', 'ok') : tag('no') }, { label: 'canaries shown', render: (r) => num(d.exposed_by_session[r.id] || 0) }, { label: 'dur', render: (r) => fmtRel(r.last_seen_at - r.started_at) }, { label: 'flags', render: (r) => [r.synthetic ? tag('synthetic', 'warn') : null, r.cluster_id ? link('#/cluster/' + r.cluster_id, r.cluster_id) : null] }], d.sessions, { link: (r) => '#/session/' + encodeURIComponent(r.id) })), 'span8'));
+    const sessionIds = d.sessions.map((x) => x.id);
+    const pages = Object.keys(d.page_matrix).sort((a, b) => d.first_reached[a].ts - d.first_reached[b].ts);
+    if (pages.length) {
+      const cells = {}; for (const p of pages) { cells[p] = {}; for (const id of d.page_matrix[p]) cells[p][id.slice(0, 8)] = 1; }
+      g.appendChild(withSpan(card('pages × sessions, rows in the order the actor first reached them (a page lit in a later column is one it came back for)', heatTable(pages, sessionIds.map((id) => id.slice(0, 8)), cells, { corner: 'page \\ session' })), 'span12'));
+    }
+    g.appendChild(withSpan(card('canaries presented', d.sightings.length ? table([{ label: 'when', render: (r) => fmtTs(r.ts) }, { label: 'session', render: (r) => sid(r.session_id) }, { label: 'canary', render: (r) => h('code', null, r.canary_id) }, { label: 'in', key: 'seen_in' }, { label: 'shown where', render: (r) => r.carried_from ? [tag('carried across sessions', 'bad'), ' from ', sid(r.carried_from), ' ', tag(r.carried_placement, 'lilac'), ' ', h('span', { class: 'muted' }, fmtRel(r.carried_after_ms) + ' earlier')] : (r.cross_session ? tag('never shown to this actor: another actor, a cache, or an index', 'rose') : tag('same session', 'ok')) }], d.sightings) : h('p', { class: 'muted' }, 'this actor never presented a canary')), 'span12'));
   };
 
   views.synthetic = async (root) => {

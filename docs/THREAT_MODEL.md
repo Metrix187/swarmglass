@@ -42,7 +42,7 @@ A honeypot advertises itself to the parts of the internet that are looking for t
 | log injection | control characters scrubbed from every stored string; bounded lengths |
 | rate abuse | token bucket per truncated address (30 rps, burst 120 default) → 429 with `Retry-After`; global limits at the proxy |
 | disk exhaustion | writer queue bound (20 k), disk guard (degrade at 90%, purge at 100%), log rotation, `mem_limit` |
-| header spoofing of client address | `X-Forwarded-For`/`X-Real-IP`/`CF-Connecting-IP` honoured only from `SWARMGLASS_TRUSTED_PROXIES` |
+| header spoofing of client address | `X-Real-IP` / `X-Forwarded-For` honoured only from `SWARMGLASS_TRUSTED_PROXIES`; `CF-Connecting-IP` only when `SWARMGLASS_TRUST_CF_CONNECTING_IP=true` as well, because a direct origin's proxy passes a visitor's own copy of it through (and the shipped proxy configs strip it); a forwarded value that is not an address is ignored outright |
 | synthetic tagging by outsiders | the tag header is a shared secret compared in constant time; without it the request is real traffic with a curious header |
 | canary forgery | canaries are HMACs; a made-up id is recorded as a sighting of an unknown canary and carries no attribution |
 | cache poisoning of per-actor arms | `Vary: Accept` on pages, `Cache-Control: no-store` on anything actor-specific, `Bypass` recommended if a CDN ever sits in front |
@@ -53,7 +53,7 @@ A honeypot advertises itself to the parts of the internet that are looking for t
 |---|---|
 | exposure to the internet | separate listener bound to loopback; separate hostname; proxy `remote_ip` allowlist + edge basic auth; app-level `SWARMGLASS_CONSOLE_IP_ALLOWLIST` |
 | credential attacks | scrypt-hashed single account; 5 attempts / 10 min per prefix; constant-time comparisons; 12-hour server-side sessions |
-| CSRF | `SameSite=Strict` cookie + double-submit token on every state change |
+| CSRF | `SameSite=Strict` cookie + double-submit token on every state change, sign-out included; every POST, the token-less login form among them, also refuses a cross-site `Origin` / `Sec-Fetch-Site` |
 | XSS | strict CSP (`default-src 'none'`), no inline scripts, all data via `textContent`; the login page is the only server-rendered form |
 | clickjacking / MIME sniffing | `X-Frame-Options: DENY`, `nosniff`, `X-Robots-Tag: noindex` |
 | leaking via exports | sanitizer with allowlists and a leak assertion; public/internal levels stamped |

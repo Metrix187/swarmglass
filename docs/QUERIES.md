@@ -155,3 +155,22 @@ WHERE e.synthetic = 0 AND e.page_id = 'Backup_2014_Restore_Notes' AND e.status <
   AND e.actor_hash NOT IN (SELECT actor_hash FROM events WHERE page_id = 'Main_Page' AND method = 'GET' AND status = 200 AND resource_kind = 'page')
 ORDER BY e.ts;
 ```
+
+## Client signatures: one header order, many user-agent strings
+
+The console's *signatures* view, by hand. `header_order_hash` is a hash of the header names in wire order; a user-agent is a string anyone can set, the order an http stack emits its headers in is set by the stack. A row with `ua_strings > 1` is one client wearing masks, which the swarm detector cannot see because it groups by the mask.
+
+```sql
+SELECT e.header_order_hash AS signature,
+       MIN(e.header_names) AS header_order,
+       COUNT(DISTINCT e.session_id) AS sessions,
+       COUNT(DISTINCT s.ip_trunc) AS prefixes,
+       COUNT(DISTINCT s.ua_hash) AS ua_strings,
+       GROUP_CONCAT(DISTINCT s.ua_family) AS families,
+       COUNT(*) AS requests
+FROM events e JOIN sessions s ON s.id = e.session_id
+WHERE e.synthetic = 0 AND e.ts >= strftime('%s', 'now', '-7 days') * 1000 AND e.header_names != ''
+GROUP BY e.header_order_hash
+HAVING sessions >= 2
+ORDER BY ua_strings DESC, sessions DESC;
+```

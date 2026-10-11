@@ -67,7 +67,7 @@ One row per request, including rate-limited (429) and client-error (parse failur
 | `canaries_seen` | json array of `{id, where}` found in the request |
 | `cohorts_json` | arms at request time |
 | `synthetic`, `synthetic_run` | |
-| `malformed` | json array of flags (`dot_dot`, `null_byte`, `probe_pattern`, `no_user_agent`, `body_truncated`, `parse_error:*`…) |
+| `malformed` | json array of flags (`dot_dot`, `null_byte`, `probe_pattern`, `scanner_path`, `no_user_agent`, `body_truncated`, `parse_error:*`…). `scanner_path` is the vulnerability-scanner alphabet: `.env*`, `.git`, `wp-*`, `phpmyadmin`, `actuator`, backup and dump names, and so on; the mirror answers 404 like it does for any unknown path |
 | `body_bytes`, `body_ctype` | size and type of a request body (content never stored) |
 | `extra_json` | allowlisted header values (`sec-fetch-*`, `sec-ch-ua*`, `dnt`…), `accept_profile`, `synthetic_persona`, `client_error` |
 

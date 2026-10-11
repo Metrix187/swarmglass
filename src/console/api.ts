@@ -5,8 +5,9 @@ import type { EventRow, Features } from '../telemetry/features.ts';
 import type { Scores } from '../telemetry/scoring.ts';
 import { buildStory } from './story.ts';
 import { ngrams } from '../util/text.ts';
-import { median, percentile } from '../util/time.ts';
+import { dayKey, median, percentile } from '../util/time.ts';
 import { compareExperiment, type Comparison } from '../experiments/compare.ts';
+import { isScannerPath } from '../http/security.ts';
 
 // read-side queries for the research console. everything returns plain json-able objects.
 // `synthetic` is always an explicit filter so test traffic never sneaks into a real chart.
@@ -74,6 +75,7 @@ export function overview(d: QueryDeps, range: Range, synthetic: 'real' | 'synthe
     recent_sightings: sightings,
     experiments: d.registry.active().map((e) => ({ id: e.id, name: e.name, variable: e.variable, arms: e.arms.length })),
     disk: disk ? JSON.parse(disk.v) : null,
+    activity: activityGrid(db, `ts >= ? AND ts <= ?${sf.sql}`, [range.since, range.until, ...sf.args]),
   };
 }
 
@@ -86,6 +88,7 @@ export interface SessionListOpts {
   cluster?: string | null;
   experiment?: string | null;
   arm?: string | null;
+  signature?: string | null; // header-order hash, see signatures()
   minRequests?: number;
   limit: number;
   offset: number;
@@ -114,6 +117,10 @@ export function listSessions(d: QueryDeps, o: SessionListOpts): { total: number;
   if (o.experiment) {
     where.push("cohorts_json LIKE ?");
     args.push(`%"${o.experiment}":"${o.arm ?? ''}%`);
+  }
+  if (o.signature) {
+    where.push('id IN (SELECT DISTINCT session_id FROM events WHERE header_order_hash = ?)');
+    args.push(o.signature);
   }
   if (o.minRequests) {
     where.push('n_requests >= ?');
@@ -250,7 +257,8 @@ export function clusterDetail(d: QueryDeps, id: string): Record<string, unknown>
     }
   }
   const metrics = r.kind === 'swarm' ? swarmMetrics(d, id) : null;
-  return { ...r, signals: JSON.parse(r.signals_json), summary: parseSummary(r.summary_json), summary_json: undefined, members, page_matrix: pageMatrix, metrics };
+  const activity = activityGrid(d.db, 'session_id IN (SELECT id FROM sessions WHERE cluster_id = ?)', [id]);
+  return { ...r, signals: JSON.parse(r.signals_json), summary: parseSummary(r.summary_json), summary_json: undefined, members, page_matrix: pageMatrix, metrics, activity };
 }
 
 // the three curves F-001 asked for: does the pool run out of new pages, which pages does it come back to and how
@@ -424,12 +432,31 @@ export function anomalies(d: QueryDeps, range: Range, synthetic: 'real' | 'synth
   const methods = d.db.all<{ method: string; n: number }>(`SELECT method, COUNT(*) AS n FROM events WHERE ts >= ? AND ts <= ? AND method NOT IN ('GET','HEAD')${sf.sql} GROUP BY method ORDER BY n DESC`, range.since, range.until, ...sf.args);
   const posts = d.db.all(`SELECT ts, session_id, path, status, body_bytes, body_ctype FROM events WHERE ts >= ? AND ts <= ? AND method IN ('POST','PUT','PATCH')${sf.sql} ORDER BY ts DESC LIMIT 50`, range.since, range.until, ...sf.args);
   const bursts = d.db.all<{ session_id: string; n: number; ua_family: string | null }>(`SELECT e.session_id, COUNT(*) AS n, s.ua_family FROM events e JOIN sessions s ON s.id = e.session_id WHERE e.ts >= ? AND e.ts <= ?${sf.sql.replace('synthetic', 'e.synthetic')} GROUP BY e.session_id HAVING n >= 200 ORDER BY n DESC LIMIT 30`, range.since, range.until, ...sf.args);
-  const dead = d.db.all<{ path: string; n: number; s: number }>(`SELECT path, COUNT(*) AS n, COUNT(DISTINCT session_id) AS s FROM events WHERE ts >= ? AND ts <= ? AND status = 404${sf.sql} GROUP BY path ORDER BY n DESC LIMIT 40`, range.since, range.until, ...sf.args);
-  const probes = d.db.all(`SELECT ts, session_id, path, status FROM events WHERE ts >= ? AND ts <= ? AND malformed LIKE '%probe_pattern%'${sf.sql} ORDER BY ts DESC LIMIT 50`, range.since, range.until, ...sf.args);
+  // 404s come in three kinds: the skin's own red links (every page gets a Discussion tab, most have no talk page),
+  // foreign paths nothing on the site points at, and the scanner alphabet. in one list the scanners vanished
+  // under a wall of /wiki/Talk:
+  const dead = d.db.all<{ path: string; n: number; s: number }>(`SELECT path, COUNT(*) AS n, COUNT(DISTINCT session_id) AS s FROM events WHERE ts >= ? AND ts <= ? AND status = 404${sf.sql} GROUP BY path ORDER BY n DESC LIMIT 400`, range.since, range.until, ...sf.args);
+  const redLinks = dead.filter((r) => r.path.startsWith('/wiki/')).slice(0, 40);
+  const scannerPaths = dead.filter((r) => !r.path.startsWith('/wiki/') && isScannerPath(r.path)).slice(0, 40);
+  const foreign = dead.filter((r) => !r.path.startsWith('/wiki/') && !isScannerPath(r.path)).slice(0, 40);
+  const probes = d.db.all(`SELECT ts, session_id, path, status FROM events WHERE ts >= ? AND ts <= ? AND (malformed LIKE '%probe_pattern%' OR malformed LIKE '%scanner_path%')${sf.sql} ORDER BY ts DESC LIMIT 50`, range.since, range.until, ...sf.args);
+  // scanner sessions, judged by what they asked for rather than by the flag, so rows recorded before the flag
+  // existed count too: three or more misses from the scanner alphabet
+  const scannerCandidates = d.db.all<{ session_id: string; n: number; ua_family: string | null; started_at: number; n_requests: number }>(
+    `SELECT e.session_id, COUNT(*) AS n, s.ua_family, s.started_at, s.n_requests FROM events e JOIN sessions s ON s.id = e.session_id WHERE e.ts >= ? AND e.ts <= ? AND e.status = 404 AND e.path NOT LIKE '/wiki/%'${sf.sql.replace('synthetic', 'e.synthetic')} GROUP BY e.session_id HAVING n >= 3 ORDER BY n DESC LIMIT 60`,
+    range.since, range.until, ...sf.args,
+  );
+  const scanners: Array<Record<string, unknown>> = [];
+  for (const c of scannerCandidates) {
+    const paths = d.db.all<{ path: string }>("SELECT path FROM events WHERE session_id = ? AND status = 404 AND path NOT LIKE '/wiki/%' ORDER BY ts LIMIT 300", c.session_id).map((r) => r.path);
+    const hits = paths.filter(isScannerPath);
+    if (hits.length < 3) continue;
+    scanners.push({ session_id: c.session_id, started_at: c.started_at, ua_family: c.ua_family, requests: c.n_requests, missing: c.n, scanner_hits: hits.length, sample: hits.slice(0, 6) });
+  }
   const searches = d.db.all<{ q: string; n: number }>(`SELECT json_extract(query_json, '$.search') AS q, COUNT(*) AS n FROM events WHERE ts >= ? AND ts <= ? AND page_id = 'Special:Search' AND query_json IS NOT NULL${sf.sql} GROUP BY q ORDER BY n DESC LIMIT 40`, range.since, range.until, ...sf.args);
   const swarms = d.db.all<{ id: string; window_start: number; window_end: number; size: number; swarm_score: number; label: string; summary_json: string | null }>(`SELECT id, window_start, window_end, size, swarm_score, label, summary_json FROM clusters WHERE kind = 'swarm' AND window_end >= ?${sf.sql} ORDER BY size DESC LIMIT 10`, range.since, ...sf.args)
     .map((r) => ({ ...r, summary: parseSummary(r.summary_json), summary_json: undefined }));
-  return { swarms, malformed, rate_limited: limited, methods, posts, heavy_sessions: bursts, dead_paths: dead, probes, searches };
+  return { swarms, scanners, malformed, rate_limited: limited, methods, posts, heavy_sessions: bursts, dead_paths: foreign, scanner_paths: scannerPaths, red_links: redLinks, probes, searches };
 }
 
 export function syntheticReport(d: QueryDeps): Record<string, unknown> {
@@ -467,4 +494,155 @@ export function timeToPage(d: QueryDeps, pageId: string, range: Range, synthetic
   const rows = d.db.all<{ dt: number; cls: string | null; via: string; session_id: string }>(`SELECT pd.ts - s.started_at AS dt, s.likely_class AS cls, pd.via, pd.session_id FROM page_discoveries pd JOIN sessions s ON s.id = pd.session_id WHERE pd.page_id = ? AND pd.ts >= ? AND pd.ts <= ?${sf} ORDER BY dt`, pageId, range.since, range.until, ...args);
   const dts = rows.map((r) => r.dt);
   return { page: pageId, n: rows.length, median_ms: median(dts), p90_ms: percentile(dts, 90), rows: rows.slice(0, 200) };
+}
+
+// ---- hour-of-day × day-of-week request counts, utc. a pool that works office hours somewhere has a shape here ----
+
+const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+export function activityGrid(db: Db, where: string, args: unknown[]): { rows: string[]; cols: string[]; cells: Record<string, Record<string, number>>; total: number; peak: number } {
+  // unix day 0 was a thursday; integer arithmetic throughout, ts is an integer column
+  const rows = db.all<{ dow: number; hour: number; n: number }>(`SELECT ((ts / 86400000) + 4) % 7 AS dow, (ts / 3600000) % 24 AS hour, COUNT(*) AS n FROM events WHERE ${where} GROUP BY dow, hour`, ...args);
+  const cells: Record<string, Record<string, number>> = {};
+  let total = 0;
+  let peak = 0;
+  for (const r of rows) {
+    (cells[DOW[r.dow] as string] ??= {})[String(r.hour)] = r.n;
+    total += r.n;
+    if (r.n > peak) peak = r.n;
+  }
+  return { rows: DOW, cols: Array.from({ length: 24 }, (_, h) => String(h)), cells, total, peak };
+}
+
+// ---- the daily rollups the scheduler writes every ten minutes: the long memory. events age out after
+// SWARMGLASS_RETENTION_DAYS, these rows do not, and until now nothing read them ----
+
+export function dailyHistory(d: QueryDeps, days: number, synthetic: 'real' | 'synthetic' | 'all'): Array<Record<string, unknown>> {
+  const since = dayKey(Date.now() - days * 86_400_000);
+  const rows = d.db.all<{ day: string; synthetic: number; requests: number; sessions: number; errors: number; canary_sightings: number; by_class_json: string | null; by_kind_json: string | null }>(
+    'SELECT day, synthetic, requests, sessions, errors, canary_sightings, by_class_json, by_kind_json FROM daily_stats WHERE day >= ? ORDER BY day ASC',
+    since,
+  );
+  const byDay = new Map<string, { day: string; requests: number; sessions: number; errors: number; canary_sightings: number; by_class: Record<string, number>; by_kind: Record<string, number> }>();
+  for (const r of rows) {
+    if (synthetic !== 'all' && r.synthetic !== (synthetic === 'synthetic' ? 1 : 0)) continue;
+    const cur = byDay.get(r.day) ?? { day: r.day, requests: 0, sessions: 0, errors: 0, canary_sightings: 0, by_class: {}, by_kind: {} };
+    cur.requests += r.requests;
+    cur.sessions += r.sessions;
+    cur.errors += r.errors;
+    cur.canary_sightings += r.canary_sightings;
+    for (const [k, v] of Object.entries(parseCounts(r.by_class_json))) cur.by_class[k] = (cur.by_class[k] ?? 0) + v;
+    for (const [k, v] of Object.entries(parseCounts(r.by_kind_json))) cur.by_kind[k] = (cur.by_kind[k] ?? 0) + v;
+    byDay.set(r.day, cur);
+  }
+  return [...byDay.values()];
+}
+
+function parseCounts(json: string | null): Record<string, number> {
+  if (!json) return {};
+  try {
+    const v = JSON.parse(json) as Record<string, unknown>;
+    const out: Record<string, number> = {};
+    for (const [k, n] of Object.entries(v)) if (typeof n === 'number') out[k] = n;
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+// ---- client signatures: the wire order of a request's headers. a user-agent is a string anyone can set; the
+// order an http stack emits its headers in is set by the stack and rarely touched. one order behind several
+// user-agent strings is one client wearing masks, which is the thing the swarm detector cannot see, since it
+// groups by the mask. two sessions minimum, or every one-off client is its own row ----
+
+export function signatures(d: QueryDeps, range: Range, synthetic: 'real' | 'synthetic' | 'all'): Array<Record<string, unknown>> {
+  const sf = synthFilter(synthetic);
+  const rows = d.db.all<{ h: string; names: string | null; sessions: number; actors: number; requests: number; prefixes: number; uas: number; families: string | null; first: number; last: number; pages: number }>(
+    `SELECT e.header_order_hash AS h, MIN(e.header_names) AS names, COUNT(DISTINCT e.session_id) AS sessions, COUNT(DISTINCT s.actor_hash) AS actors, COUNT(*) AS requests, COUNT(DISTINCT s.ip_trunc) AS prefixes, COUNT(DISTINCT s.ua_hash) AS uas, GROUP_CONCAT(DISTINCT s.ua_family) AS families, MIN(e.ts) AS first, MAX(e.ts) AS last, COUNT(DISTINCT e.page_id) AS pages
+     FROM events e JOIN sessions s ON s.id = e.session_id
+     WHERE e.ts >= ? AND e.ts <= ? AND e.header_order_hash IS NOT NULL AND e.header_names != ''${sf.sql.replace('synthetic', 'e.synthetic')}
+     GROUP BY e.header_order_hash HAVING sessions >= 2 ORDER BY sessions DESC LIMIT 80`,
+    range.since, range.until, ...sf.args,
+  );
+  return rows.map((r) => {
+    const uaRows = d.db.all<{ ua: string | null; n: number }>('SELECT ua, COUNT(*) AS n FROM sessions WHERE id IN (SELECT DISTINCT session_id FROM events WHERE header_order_hash = ? AND ts >= ? AND ts <= ?) GROUP BY ua ORDER BY n DESC LIMIT 4', r.h, range.since, range.until);
+    const names = (r.names ?? '').split(',').filter(Boolean);
+    return {
+      signature: r.h,
+      header_names: names,
+      sessions: r.sessions,
+      actors: r.actors,
+      requests: r.requests,
+      prefixes: r.prefixes,
+      ua_strings: r.uas,
+      families: (r.families ?? '').split(',').filter(Boolean),
+      pages: r.pages,
+      first_seen: r.first,
+      last_seen: r.last,
+      ua_samples: uaRows.map((u) => ({ ua: (u.ua ?? '').slice(0, 160), sessions: u.n })),
+      // one stack, several masks
+      masks: r.uas > 1,
+      // many addresses, one stack, one or two requests each: the swarm shape, whatever the user-agent says
+      spread: r.prefixes >= 8 && r.requests / r.sessions <= 2,
+    };
+  });
+}
+
+// ---- one actor fingerprint, every session it had. the memory question, asked across sessions: did a later
+// session go straight to pages only an earlier one was shown, and did it present a canary it was shown last time? ----
+
+export function actorDetail(d: QueryDeps, actorHash: string): Record<string, unknown> | null {
+  const { db } = d;
+  const sessions = db.all<Record<string, unknown>>('SELECT id, kind, started_at, last_seen_at, ended_at, ip_trunc, ua, ua_family, cookie_returned, n_requests, n_unique_pages, n_machine, n_disallowed, n_errors, likely_class, class_confidence, cluster_id, synthetic, cohorts_json FROM sessions WHERE actor_hash = ? ORDER BY started_at ASC LIMIT 200', actorHash).map(decodeSessionRow);
+  if (!sessions.length) return null;
+  const ids = sessions.map((s) => String(s.id));
+  const placeholders = ids.map(() => '?').join(',');
+  const disc = db.all<{ session_id: string; page_id: string; ts: number; via: string; discover_class: string | null }>(`SELECT session_id, page_id, ts, via, discover_class FROM page_discoveries WHERE session_id IN (${placeholders}) ORDER BY ts ASC`, ...ids);
+  const pageMatrix: Record<string, string[]> = {};
+  const firstReached: Record<string, { session_id: string; ts: number; via: string; discover_class: string | null }> = {};
+  for (const r of disc) {
+    (pageMatrix[r.page_id] ??= []).push(r.session_id);
+    if (!firstReached[r.page_id]) firstReached[r.page_id] = { session_id: r.session_id, ts: r.ts, via: r.via, discover_class: r.discover_class };
+  }
+  const exposures = db.all<{ session_id: string; canary_id: string; first_at: number; placement: string }>(`SELECT session_id, canary_id, first_at, placement FROM canary_exposures WHERE session_id IN (${placeholders}) ORDER BY first_at ASC`, ...ids);
+  const exposedBySession: Record<string, number> = {};
+  const firstExposure = new Map<string, { session_id: string; first_at: number; placement: string }>();
+  for (const e of exposures) {
+    exposedBySession[e.session_id] = (exposedBySession[e.session_id] ?? 0) + 1;
+    if (!firstExposure.has(e.canary_id)) firstExposure.set(e.canary_id, { session_id: e.session_id, first_at: e.first_at, placement: e.placement });
+  }
+  const sightings = db.all<{ ts: number; session_id: string; canary_id: string; seen_in: string; cross_session: number; cross_actor: number; exposure_session_id: string | null; delta_ms: number | null }>(`SELECT ts, session_id, canary_id, seen_in, cross_session, cross_actor, exposure_session_id, delta_ms FROM canary_sightings WHERE session_id IN (${placeholders}) ORDER BY ts ASC`, ...ids);
+  // a canary presented in one session that this actor was shown in an *earlier* one: carried over the boundary
+  const enriched = sightings.map((s) => {
+    const fx = firstExposure.get(s.canary_id);
+    const carried = fx && fx.session_id !== s.session_id && fx.first_at < s.ts ? fx : null;
+    return { ...s, carried_from: carried ? carried.session_id : null, carried_placement: carried ? carried.placement : null, carried_after_ms: carried ? s.ts - carried.first_at : null };
+  });
+  const pages = Object.keys(pageMatrix);
+  const classes: Record<string, number> = {};
+  for (const s of sessions) {
+    const k = String(s.likely_class ?? 'unscored');
+    classes[k] = (classes[k] ?? 0) + 1;
+  }
+  return {
+    actor_hash: actorHash,
+    summary: {
+      sessions: sessions.length,
+      first_seen: Math.min(...sessions.map((s) => Number(s.started_at))),
+      last_seen: Math.max(...sessions.map((s) => Number(s.last_seen_at))),
+      requests: sessions.reduce((a, s) => a + Number(s.n_requests), 0),
+      distinct_pages: pages.length,
+      pages_seen_in_more_than_one_session: pages.filter((p) => new Set(pageMatrix[p]).size > 1).length,
+      canaries_exposed: firstExposure.size,
+      canaries_carried_across_sessions: enriched.filter((s) => s.carried_from).length,
+      ua_strings: new Set(sessions.map((s) => s.ua)).size,
+      prefixes: new Set(sessions.map((s) => s.ip_trunc)).size,
+      classes,
+    },
+    sessions,
+    page_matrix: pageMatrix,
+    first_reached: firstReached,
+    exposed_by_session: exposedBySession,
+    sightings: enriched,
+  };
 }

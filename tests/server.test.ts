@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startApp, type App } from '../src/app.ts';
 import { testConfig } from '../src/config.ts';
-import { scoreSessions, runClustering } from '../src/telemetry/jobs.ts';
+import { scoreSessions, runClustering, rollupDaily } from '../src/telemetry/jobs.ts';
 import { pageInfoFor } from '../src/wiki/content.ts';
 import { runSynthetic } from '../src/synth/run.ts';
 import { generateReport } from '../src/publish/report.ts';
@@ -526,9 +526,16 @@ test('console: cross-site state changes are refused, and signing out needs the t
   const c = (path: string, init: RequestInit = {}) => fetch(consoleBase + path, { redirect: 'manual', ...init });
   // the browser's own words say cross-site, so even a valid token does not help
   assert.equal((await c('/api/jobs/score', { method: 'POST', headers: { cookie, 'content-type': 'application/json', 'x-csrf': csrf, origin: 'https://evil.example' }, body: '{}' })).status, 403);
-  assert.equal((await c('/api/jobs/score', { method: 'POST', headers: { cookie, 'content-type': 'application/json', 'x-csrf': csrf, origin: 'null' }, body: '{}' })).status, 403);
   assert.equal((await c('/api/jobs/score', { method: 'POST', headers: { cookie, 'content-type': 'application/json', 'x-csrf': csrf, 'sec-fetch-site': 'cross-site' }, body: '{}' })).status, 403);
+  // "Origin: null" is what the console's own Referrer-Policy: no-referrer makes a browser send on a same-origin
+  // POST, so it is judged by Sec-Fetch-Site, not refused on sight
+  assert.equal((await c('/api/jobs/score', { method: 'POST', headers: { cookie, 'content-type': 'application/json', 'x-csrf': csrf, origin: 'null', 'sec-fetch-site': 'same-origin' }, body: '{}' })).status, 200, 'a same-origin POST under no-referrer');
+  assert.equal((await c('/api/jobs/score', { method: 'POST', headers: { cookie, 'content-type': 'application/json', 'x-csrf': csrf, origin: 'null', 'sec-fetch-site': 'cross-site' }, body: '{}' })).status, 403, 'a cross-site page with its own no-referrer policy');
+  assert.equal((await c('/api/jobs/score', { method: 'POST', headers: { cookie, 'content-type': 'application/json', 'x-csrf': csrf, origin: 'null' }, body: '{}' })).status, 200, 'an old browser with neither: the token still applies');
   assert.equal((await c('/api/jobs/score', { method: 'POST', headers: { cookie, 'content-type': 'application/json', 'x-csrf': csrf, origin: `http://127.0.0.1:${app.consolePort}`, 'sec-fetch-site': 'same-origin' }, body: '{}' })).status, 200, 'the console\'s own origin is fine');
+  // a proxy that rewrites Host, or a dev setup mixing localhost and 127.0.0.1, must not lock the operator out
+  assert.equal((await c('/api/jobs/score', { method: 'POST', headers: { cookie, 'content-type': 'application/json', 'x-csrf': csrf, origin: new URL(app.cfg.console.baseUrl).origin }, body: '{}' })).status, 200, 'the configured console base url counts as own');
+  assert.equal((await c('/api/jobs/score', { method: 'POST', headers: { cookie, 'content-type': 'application/json', 'x-csrf': csrf, origin: `http://127.0.0.1:${app.consolePort}`, 'sec-fetch-site': 'cross-site' }, body: '{}' })).status, 200, 'a present Origin outranks Sec-Fetch-Site');
   // the login form has no token, so the origin check is what it has; a refused attempt does not burn the limiter
   assert.equal((await c('/login', { method: 'POST', body: 'user=researcher&password=test-password-123', headers: { 'content-type': 'application/x-www-form-urlencoded', 'sec-fetch-site': 'cross-site' } })).status, 403);
   assert.equal((await c('/login', { method: 'POST', body: 'user=researcher&password=test-password-123', headers: { 'content-type': 'application/x-www-form-urlencoded', origin: 'https://evil.example' } })).status, 403);
@@ -538,4 +545,43 @@ test('console: cross-site state changes are refused, and signing out needs the t
   assert.equal((await c('/logout', { method: 'POST', headers: { cookie, 'content-type': 'application/x-www-form-urlencoded' }, body: `csrf=${csrf}` })).status, 303);
   assert.equal((await c('/api/me', { headers: { cookie } })).status, 401);
   consoleSession = null;
+});
+
+test('console: history, signatures, activity and actor views answer from the same rows', async () => {
+  const { cookie } = await consoleLogin();
+  const c = (path: string) => fetch(consoleBase + path, { headers: { cookie } });
+  // the scheduler is off in tests; roll today up by hand so the history has something to read back
+  rollupDaily({ cfg: app.cfg, db: app.db, log: app.log, telemetry: app.telemetry, heuristics: app.heuristics, pageInfo: pageInfoFor(app.cat) });
+  const hist = await (await c('/api/history?days=7&synthetic=all')).json() as { days: Array<{ day: string; requests: number; by_kind: Record<string, number> }> };
+  assert.ok(hist.days.length >= 1);
+  const today = hist.days[hist.days.length - 1]!;
+  assert.ok(today.requests > 50, `today: ${today.requests}`);
+  assert.ok((today.by_kind.page ?? 0) > 0);
+  const sig = await (await c('/api/signatures?range=24h&synthetic=all')).json() as { signatures: Array<{ signature: string; sessions: number; header_names: string[]; ua_samples: unknown[] }> };
+  assert.ok(sig.signatures.length >= 1, 'every test request shares node fetch\'s header order');
+  const top = sig.signatures[0]!;
+  assert.ok(top.sessions >= 2);
+  assert.ok(top.header_names.includes('user-agent'), top.header_names.join(','));
+  const filtered = await (await c(`/api/sessions?range=24h&synthetic=all&signature=${top.signature}`)).json() as { total: number };
+  assert.equal(filtered.total, top.sessions, 'the sessions filter and the signature count agree');
+  const ov = await (await c('/api/overview?range=24h&synthetic=all')).json() as { activity: { total: number; rows: string[]; cols: string[]; peak: number } };
+  assert.ok(ov.activity.total > 50);
+  assert.equal(ov.activity.cols.length, 24);
+  assert.ok(ov.activity.peak <= ov.activity.total);
+  // the actor behind canary-probe/1 had one session, was shown canaries and presented one of them in that same session
+  const actor = app.db.get<{ actor_hash: string }>('SELECT actor_hash FROM sessions WHERE ua = ?', 'canary-probe/1')!.actor_hash;
+  const a = await (await c(`/api/actors/${actor}`)).json() as { summary: { sessions: number; canaries_exposed: number; canaries_carried_across_sessions: number }; sightings: Array<{ carried_from: string | null }>; page_matrix: Record<string, string[]> };
+  assert.equal(a.summary.sessions, 1);
+  assert.ok(a.summary.canaries_exposed >= 5);
+  assert.equal(a.sightings.length, 1);
+  assert.equal(a.sightings[0]!.carried_from, null, 'presented in the session it was shown in, so nothing crossed a boundary');
+  assert.equal(a.summary.canaries_carried_across_sessions, 0);
+  assert.ok(a.page_matrix['Tool_Registry']);
+  assert.equal((await c('/api/actors/zz')).status, 400);
+  assert.equal((await c('/api/actors/0123456789abcdef')).status, 404);
+  const an = await (await c('/api/anomalies?range=24h&synthetic=all')).json() as { scanners: Array<{ scanner_hits: number; sample: string[] }>; scanner_paths: Array<{ path: string }>; red_links: Array<{ path: string }>; dead_paths: Array<{ path: string }> };
+  assert.ok(an.scanner_paths.some((p) => p.path === '/.env'));
+  assert.ok(an.scanners.length >= 1 && an.scanners[0]!.scanner_hits >= 3, 'scan-probe/1 asked for three scanner paths');
+  assert.ok(an.dead_paths.some((p) => p.path === '/admin'), 'a plain foreign miss stays in its own list');
+  assert.ok(!an.red_links.some((p) => !p.path.startsWith('/wiki/')));
 });
