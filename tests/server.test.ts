@@ -22,6 +22,7 @@ before(async () => {
   cfg.public = { ...cfg.public, port: 0, host: '127.0.0.1', baseUrl: 'http://127.0.0.1' };
   cfg.console = { ...cfg.console, port: 0, host: '127.0.0.1', devPassword: 'test-password-123' };
   cfg.limits = { ...cfg.limits, rateRps: 1000, rateBurst: 5000 };
+  cfg.reportsDir = mkdtempSync(join(tmpdir(), 'sg-reports-'));
   app = await startApp({ cfg, scheduler: false });
   base = `http://127.0.0.1:${app.publicPort}`;
   consoleBase = `http://127.0.0.1:${app.consolePort}`;
@@ -474,4 +475,67 @@ test('SGX-012 twins stay out of every machine channel, and a forbidden fetch is 
   const flag = (page: string) => app.db.get<{ robots_disallowed: number }>('SELECT robots_disallowed FROM events WHERE page_id = ? ORDER BY ts DESC LIMIT 1', page)?.robots_disallowed;
   assert.equal(flag(twin), 1, 'the forbidden twin must count against the session');
   assert.equal(flag(other), 0, 'the allowed twin must not');
+});
+
+// one console session shared by the tests below: the login limiter allows five attempts per ten minutes per prefix,
+// and the suite above already spends two of them
+let consoleSession: { cookie: string; csrf: string } | null = null;
+async function consoleLogin(): Promise<{ cookie: string; csrf: string }> {
+  if (consoleSession) return consoleSession;
+  const ok = await fetch(consoleBase + '/login', { redirect: 'manual', method: 'POST', body: 'user=researcher&password=test-password-123', headers: { 'content-type': 'application/x-www-form-urlencoded' } });
+  assert.equal(ok.status, 303);
+  const cookie = ok.headers.get('set-cookie')!.split(';')[0]!;
+  const me = await (await fetch(consoleBase + '/api/me', { headers: { cookie } })).json() as { csrf: string };
+  consoleSession = { cookie, csrf: me.csrf };
+  return consoleSession;
+}
+
+test('a forged CF-Connecting-IP does not reach the telemetry on a direct origin', async () => {
+  // the peer is 127.0.0.1, a trusted proxy in the test config, so X-Real-IP is honoured and the cloudflare header is not
+  await get('/robots.txt', { headers: { 'user-agent': 'spoof-probe/1', 'cf-connecting-ip': '203.0.113.77', 'x-real-ip': '198.51.100.20' } });
+  await get('/robots.txt', { headers: { 'user-agent': 'spoof-probe/2', 'cf-connecting-ip': '203.0.113.78' } });
+  flush();
+  assert.equal(app.db.get<{ ip_trunc: string }>('SELECT ip_trunc FROM sessions WHERE ua = ?', 'spoof-probe/1')?.ip_trunc, '198.51.100.0/24');
+  assert.equal(app.db.get<{ ip_trunc: string }>('SELECT ip_trunc FROM sessions WHERE ua = ?', 'spoof-probe/2')?.ip_trunc, '127.0.0.0/24', 'with nothing else forwarded, the peer address stands');
+});
+
+test('scanner sweeps are flagged on the way in', async () => {
+  for (const p of ['/.env', '/.git/config', '/wp-login.php']) await get(p, { headers: { 'user-agent': 'scan-probe/1' } });
+  flush();
+  const rows = app.db.all<{ path: string; malformed: string | null; status: number }>('SELECT path, malformed, status FROM events WHERE session_id = (SELECT id FROM sessions WHERE ua = ?)', 'scan-probe/1');
+  assert.equal(rows.length, 3);
+  for (const r of rows) {
+    assert.equal(r.status, 404);
+    assert.ok(r.malformed && (JSON.parse(r.malformed) as string[]).includes('scanner_path'), `${r.path}: ${r.malformed}`);
+  }
+});
+
+test('the console writes observation reports under the data dir, where the container can write', async () => {
+  const { cookie, csrf } = await consoleLogin();
+  const r = await fetch(consoleBase + '/api/report', { method: 'POST', headers: { cookie, 'content-type': 'application/json', 'x-csrf': csrf }, body: JSON.stringify({ range: '24h' }) });
+  assert.equal(r.status, 200);
+  const body = await r.json() as { ok: boolean; dir: string; files: string[] };
+  assert.ok(body.ok);
+  assert.ok(body.dir.startsWith(app.cfg.reportsDir), `${body.dir} should be under ${app.cfg.reportsDir}`);
+  assert.ok(existsSync(join(body.dir, 'summary.md')));
+  assert.ok(body.files.includes('MANIFEST.json'));
+});
+
+test('console: cross-site state changes are refused, and signing out needs the token', async () => {
+  const { cookie, csrf } = await consoleLogin();
+  const c = (path: string, init: RequestInit = {}) => fetch(consoleBase + path, { redirect: 'manual', ...init });
+  // the browser's own words say cross-site, so even a valid token does not help
+  assert.equal((await c('/api/jobs/score', { method: 'POST', headers: { cookie, 'content-type': 'application/json', 'x-csrf': csrf, origin: 'https://evil.example' }, body: '{}' })).status, 403);
+  assert.equal((await c('/api/jobs/score', { method: 'POST', headers: { cookie, 'content-type': 'application/json', 'x-csrf': csrf, origin: 'null' }, body: '{}' })).status, 403);
+  assert.equal((await c('/api/jobs/score', { method: 'POST', headers: { cookie, 'content-type': 'application/json', 'x-csrf': csrf, 'sec-fetch-site': 'cross-site' }, body: '{}' })).status, 403);
+  assert.equal((await c('/api/jobs/score', { method: 'POST', headers: { cookie, 'content-type': 'application/json', 'x-csrf': csrf, origin: `http://127.0.0.1:${app.consolePort}`, 'sec-fetch-site': 'same-origin' }, body: '{}' })).status, 200, 'the console\'s own origin is fine');
+  // the login form has no token, so the origin check is what it has; a refused attempt does not burn the limiter
+  assert.equal((await c('/login', { method: 'POST', body: 'user=researcher&password=test-password-123', headers: { 'content-type': 'application/x-www-form-urlencoded', 'sec-fetch-site': 'cross-site' } })).status, 403);
+  assert.equal((await c('/login', { method: 'POST', body: 'user=researcher&password=test-password-123', headers: { 'content-type': 'application/x-www-form-urlencoded', origin: 'https://evil.example' } })).status, 403);
+  // a logout without the token is a cross-site logout waiting to happen
+  assert.equal((await c('/logout', { method: 'POST', headers: { cookie, 'content-type': 'application/x-www-form-urlencoded' }, body: '' })).status, 403);
+  assert.equal((await c('/api/me', { headers: { cookie } })).status, 200, 'and the session is still there');
+  assert.equal((await c('/logout', { method: 'POST', headers: { cookie, 'content-type': 'application/x-www-form-urlencoded' }, body: `csrf=${csrf}` })).status, 303);
+  assert.equal((await c('/api/me', { headers: { cookie } })).status, 401);
+  consoleSession = null;
 });

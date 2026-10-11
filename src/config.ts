@@ -34,6 +34,10 @@ export interface Config {
   synthToken: string;
   trustProxy: boolean;
   trustedProxies: string[];
+  // honour CF-Connecting-IP from a trusted proxy. only true behind Cloudflare's proxy: a direct origin's
+  // reverse proxy passes a visitor's own copy of that header straight through, and then anyone can be anyone
+  trustCfConnectingIp: boolean;
+  reportsDir: string; // where the console writes observation reports; inside the data dir so it exists in the container
   privacy: {
     ipMode: IpMode;
     ipSaltRotationDays: number;
@@ -162,6 +166,8 @@ export function loadConfig(root = process.cwd(), opts: { dotenv?: boolean } = {}
     synthToken: env('SWARMGLASS_SYNTH_TOKEN', isProd ? '' : 'dev-synth-token'),
     trustProxy: envBool('SWARMGLASS_TRUST_PROXY', true),
     trustedProxies: envList('SWARMGLASS_TRUSTED_PROXIES', '127.0.0.1/32,::1/128,172.16.0.0/12,10.0.0.0/8'),
+    trustCfConnectingIp: envBool('SWARMGLASS_TRUST_CF_CONNECTING_IP', false),
+    reportsDir: resolve(dataDir, env('SWARMGLASS_REPORTS_DIR', 'reports')),
     privacy: {
       ipMode: oneOf('SWARMGLASS_PRIVACY_IP_MODE', 'truncate_hash', ['truncate', 'hash', 'truncate_hash', 'none'] as const),
       ipSaltRotationDays: envInt('SWARMGLASS_IP_SALT_ROTATION_DAYS', 1),

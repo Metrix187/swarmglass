@@ -97,8 +97,26 @@ export class AttemptLimiter {
 
 // ---- request-path sanity: flags weirdness without rejecting anything we can still answer ----
 
+// paths only a vulnerability scanner asks a wiki for: dotfiles and secret stores, vcs metadata, php admin panels,
+// backup and dump names, framework debug endpoints. the mirror answers 404 like it does for anything else; the flag
+// is what lets the anomalies page tell a scanner sweep from a crawler following the skin's own red links. one
+// segment at a time, anchored on slashes, so a page called Configuration_Reference or an attachment called
+// phero.conf.example never trips it
+const SCANNER_SEGMENTS = [
+  '\\.env(\\.[\\w.-]+)?', '\\.git', '\\.svn', '\\.hg', '\\.aws', '\\.ssh', '\\.docker', '\\.vscode', '\\.idea', '\\.DS_Store', '\\.htaccess', '\\.htpasswd',
+  'wp-(admin|login|content|includes|config|json|cron)[\\w./-]*', 'xmlrpc\\.php', 'phpmyadmin', 'adminer(\\.php)?', 'phpinfo(\\.php)?', 'cgi-bin', 'actuator', 'server-status', 'telescope', '_debugbar', '_profiler', 'debug/pprof',
+  '(config|settings|credentials|secrets?|database|backup|dump)\\.(json|ya?ml|php|bak|old|orig|sql|zip|tar\\.gz|tgz|rar|env|ini|txt|log)',
+  'id_rsa', 'shell\\.php', 'eval-stdin\\.php', 'vendor/phpunit', 'autodiscover',
+];
+const SCANNER_PATH = new RegExp(`(^|/)(${SCANNER_SEGMENTS.join('|')})(/|$)`, 'i');
+
+export function isScannerPath(path: string): boolean {
+  return SCANNER_PATH.test(path);
+}
+
 export function malformationFlags(rawUrl: string, headers: Record<string, string | string[] | undefined>, method: string): string[] {
   const flags: string[] = [];
+  if (isScannerPath(decodeURIComponentSafe(rawUrl.split('?')[0] ?? ''))) flags.push('scanner_path');
   if (rawUrl.length > 2048) flags.push('url_too_long');
   if (/%00|\u0000/.test(rawUrl)) flags.push('null_byte');
   if (/(^|\/)\.\.(\/|$)/.test(rawUrl) || /%2e%2e/i.test(rawUrl)) flags.push('dot_dot');

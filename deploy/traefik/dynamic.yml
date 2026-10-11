@@ -5,13 +5,13 @@ http:
       rule: "Host(`swarmglass.quantara.cv`)"
       entryPoints: [websecure]
       service: swarmglass-public
-      middlewares: [swarmglass-hsts, swarmglass-block-console]
+      middlewares: [swarmglass-strip-cf, swarmglass-hsts, swarmglass-block-console]
       tls: { certResolver: le }
     swarmglass-console:
       rule: "Host(`research.swarmglass.quantara.cv`)"
       entryPoints: [websecure]
       service: swarmglass-console
-      middlewares: [swarmglass-hsts, swarmglass-noindex, swarmglass-allowlist, swarmglass-basicauth]
+      middlewares: [swarmglass-strip-cf, swarmglass-hsts, swarmglass-noindex, swarmglass-allowlist, swarmglass-basicauth]
       tls: { certResolver: le }
 
   services:
@@ -25,6 +25,12 @@ http:
         passHostHeader: true
 
   middlewares:
+    swarmglass-strip-cf:
+      # an empty value removes a client-supplied header. this origin is not behind cloudflare, and the app would
+      # otherwise be handed a visitor's own CF-Connecting-IP (it ignores the header by default now, but strip it anyway)
+      headers:
+        customRequestHeaders:
+          CF-Connecting-IP: ""
     swarmglass-hsts:
       headers:
         stsSeconds: 31536000

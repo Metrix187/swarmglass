@@ -28,7 +28,15 @@ test('trusted proxy resolution walks x-forwarded-for from the right', () => {
   const trusted = (ip: string) => inAnyCidr(['10.0.0.0/8', '127.0.0.1/32'], ip);
   assert.equal(resolveClientIp('127.0.0.1', { 'x-forwarded-for': '198.51.100.7, 10.0.0.5' }, { trustProxy: true, isTrusted: trusted }), '198.51.100.7');
   assert.equal(resolveClientIp('203.0.113.1', { 'x-forwarded-for': '198.51.100.7' }, { trustProxy: true, isTrusted: trusted }), '203.0.113.1', 'untrusted peer cannot spoof');
-  assert.equal(resolveClientIp('127.0.0.1', { 'cf-connecting-ip': '198.51.100.9' }, { trustProxy: true, isTrusted: trusted }), '198.51.100.9');
+  // CF-Connecting-IP is a header anyone can send, and a direct origin's proxy passes it through untouched, so it is
+  // ignored unless the operator says the origin is behind cloudflare
+  assert.equal(resolveClientIp('127.0.0.1', { 'cf-connecting-ip': '198.51.100.9', 'x-real-ip': '203.0.113.5' }, { trustProxy: true, isTrusted: trusted }), '203.0.113.5');
+  assert.equal(resolveClientIp('127.0.0.1', { 'cf-connecting-ip': '198.51.100.9' }, { trustProxy: true, isTrusted: trusted }), '127.0.0.1');
+  assert.equal(resolveClientIp('127.0.0.1', { 'cf-connecting-ip': '198.51.100.9', 'x-real-ip': '203.0.113.5' }, { trustProxy: true, isTrusted: trusted, trustCfHeader: true }), '198.51.100.9');
+  // a forwarded value that is not an address never becomes a rate-limit key or an actor fingerprint
+  assert.equal(resolveClientIp('127.0.0.1', { 'x-real-ip': 'not an ip' }, { trustProxy: true, isTrusted: trusted }), '127.0.0.1');
+  assert.equal(resolveClientIp('127.0.0.1', { 'x-forwarded-for': 'garbage, 198.51.100.7' }, { trustProxy: true, isTrusted: trusted }), '198.51.100.7');
+  assert.equal(resolveClientIp('127.0.0.1', { 'x-forwarded-for': '198.51.100.7, garbage' }, { trustProxy: true, isTrusted: trusted }), '198.51.100.7');
 });
 
 test('accept negotiation honours q values and specificity', () => {
@@ -55,6 +63,10 @@ test('malformation flags', () => {
   assert.ok(f.includes('no_user_agent'));
   assert.ok(f.includes('probe_pattern'));
   assert.deepEqual(malformationFlags('/wiki/Main_Page', { host: 'h', 'user-agent': 'x' }, 'GET'), []);
+  // scanner sweeps: the secrets-and-panels alphabet is flagged, the mirror's own paths never are
+  const clean = { host: 'h', 'user-agent': 'x' };
+  for (const p of ['/.env', '/.env.anthropic', '/.git/config', '/wp-config.php.bak', '/wp-content/debug.log', '/phpmyadmin/', '/actuator/env', '/backup.sql', '/%2Eenv', '/.aws/credentials?x=1']) assert.ok(malformationFlags(p, clean, 'GET').includes('scanner_path'), p);
+  for (const p of ['/wiki/Configuration_Reference', '/wiki/Backup_2014_Restore_Notes', '/attachments/phero.conf.example', '/attachments/node-registry-2016-03.yaml', '/api/v1/pages', '/.well-known/security.txt', '/skins/antfarm/main.css', '/wiki/Special:Search?search=.env']) assert.ok(!malformationFlags(p, clean, 'GET').includes('scanner_path'), p);
 });
 
 test('text helpers', () => {

@@ -23,6 +23,8 @@ swarmglass.quantara.cv {
 	reverse_proxy 127.0.0.1:8080 {
 		header_up X-Forwarded-Proto {scheme}
 		header_up X-Real-IP {client_ip}
+		# this origin is not behind cloudflare: a visitor's own CF-Connecting-IP must not ride through to the app
+		header_up -CF-Connecting-IP
 		# keep the wire-level details the honeypot records honest
 		flush_interval -1
 	}
@@ -41,6 +43,7 @@ research.swarmglass.quantara.cv {
 	reverse_proxy 127.0.0.1:8081 {
 		header_up X-Forwarded-Proto {scheme}
 		header_up X-Real-IP {client_ip}
+		header_up -CF-Connecting-IP
 	}
 
 	header {
@@ -53,7 +56,7 @@ research.swarmglass.quantara.cv {
 	# @allowed remote_ip 100.64.0.0/10 10.0.0.0/8
 	# handle @allowed {
 	# 	basic_auth { researcher $2a$14$… }
-	# 	reverse_proxy 127.0.0.1:8081 { header_up X-Forwarded-Proto {scheme}; header_up X-Real-IP {client_ip} }
+	# 	reverse_proxy 127.0.0.1:8081 { header_up X-Forwarded-Proto {scheme}; header_up X-Real-IP {client_ip}; header_up -CF-Connecting-IP }
 	# }
 	# handle { respond "not found" 404 }
 }

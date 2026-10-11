@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import type { Socket } from 'node:net';
+import { isIP, type Socket } from 'node:net';
 import { decodeURIComponentSafe } from './security.ts';
 import { esc } from './html.ts';
 import type { Logger } from '../log.ts';
@@ -52,6 +52,7 @@ export interface ServerOptions {
   basePath: string;
   trustProxy: boolean;
   trustedProxies: string[];
+  trustCfHeader?: boolean; // honour CF-Connecting-IP from a trusted peer; only behind cloudflare's proxy
   maxBodyBytes: number;
   log: Logger;
   // called after every response with timing; the telemetry hook
@@ -198,26 +199,42 @@ export function readBody(req: IncomingMessage, max: number): Promise<{ body: Buf
   });
 }
 
-export function resolveClientIp(remote: string, headers: Record<string, string>, opts: { trustProxy: boolean; isTrusted: (ip: string) => boolean }): string {
+// a forwarded address is only worth anything when a proxy we trust set it, and only for the headers that proxy
+// actually sets. X-Real-IP and X-Forwarded-For are what caddy / nginx / traefik write. CF-Connecting-IP is
+// cloudflare's, and on a direct origin every one of those proxies passes a visitor's own copy of it straight
+// through, which made it a header anyone could use to be anyone: a fresh rate-limit bucket per request, a
+// different actor fingerprint per request, a swarm of one. it is ignored unless the operator says the origin sits
+// behind cloudflare. a forwarded value that is not an address is ignored too; it would otherwise become a key.
+export function resolveClientIp(remote: string, headers: Record<string, string>, opts: { trustProxy: boolean; isTrusted: (ip: string) => boolean; trustCfHeader?: boolean }): string {
   if (!opts.trustProxy || !opts.isTrusted(remote)) return remote;
-  const cf = headers['cf-connecting-ip'];
-  if (cf) return cf.trim();
-  const real = headers['x-real-ip'];
-  if (real) return real.trim();
+  if (opts.trustCfHeader) {
+    const cf = ipOrNull(headers['cf-connecting-ip']);
+    if (cf) return cf;
+  }
+  const real = ipOrNull(headers['x-real-ip']);
+  if (real) return real;
   const xff = headers['x-forwarded-for'];
   if (xff) {
-    // walk right-to-left past trusted hops
+    // walk right-to-left past trusted hops; the first thing that is not an address ends the walk, since
+    // everything to its left was written by whoever wrote it
     const hops = xff.split(',').map((s) => s.trim()).filter(Boolean);
     for (let i = hops.length - 1; i >= 0; i--) {
       const hop = hops[i] as string;
+      if (!isIP(hop)) break;
       if (!opts.isTrusted(hop)) return hop;
     }
-    if (hops[0]) return hops[0];
+    const first = ipOrNull(hops[0]);
+    if (first) return first;
   }
   return remote;
 }
 
-export function buildReq(incoming: IncomingMessage, opts: { basePath: string; trustProxy: boolean; isTrusted: (ip: string) => boolean }): Req {
+function ipOrNull(v: string | undefined): string | null {
+  const s = (v ?? '').trim();
+  return s && isIP(s) ? s : null;
+}
+
+export function buildReq(incoming: IncomingMessage, opts: { basePath: string; trustProxy: boolean; isTrusted: (ip: string) => boolean; trustCfHeader?: boolean }): Req {
   const rawUrl = (incoming.url ?? '/').slice(0, MAX_URL);
   const headers: Record<string, string> = {};
   const names: string[] = [];

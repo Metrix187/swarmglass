@@ -64,6 +64,21 @@ export function buildConsoleRouter(deps: ConsoleDeps): Router {
     return null;
   };
 
+  // a state change has to come from the console's own origin. the csrf token already settles that for the api;
+  // this asks the browser the same question in its own words, and it is the only guard the login form has.
+  // no Origin at all (curl, older clients) is allowed through, the token still applies
+  const crossSite = (req: Req): boolean => {
+    if ((req.headers['sec-fetch-site'] ?? '').toLowerCase() === 'cross-site') return true;
+    const origin = req.headers['origin'];
+    if (origin === undefined) return false;
+    if (origin === 'null') return true;
+    try {
+      return new URL(origin).host.toLowerCase() !== req.host.toLowerCase();
+    } catch {
+      return true;
+    }
+  };
+
   const requireAuth = (req: Req, handler: (req: Req, session: NonNullable<ReturnType<ConsoleAuth['sessionFor']>>) => Res | Promise<Res>): Res | Promise<Res> => {
     const g = gate(req);
     if (g) return g;
@@ -73,10 +88,10 @@ export function buildConsoleRouter(deps: ConsoleDeps): Router {
   };
 
   const requireCsrf = (req: Req, handler: (req: Req, session: NonNullable<ReturnType<ConsoleAuth['sessionFor']>>) => Res | Promise<Res>) =>
-    requireAuth(req, (rq, s) => (auth.csrfOk(rq, s) ? handler(rq, s) : forbidden('csrf')));
+    requireAuth(req, (rq, s) => (crossSite(rq) ? forbidden('cross-site request') : auth.csrfOk(rq, s) ? handler(rq, s) : forbidden('csrf')));
 
-  // ---- health (no auth; nothing sensitive) ----
-  r.get('/healthz', () => wrap(j(200, { ok: true, version: deps.cfg.version })), 'healthz');
+  // ---- health (no auth; nothing sensitive, so nothing to learn from it either) ----
+  r.get('/healthz', () => wrap(j(200, { ok: true })), 'healthz');
 
   // ---- login ----
   r.get('/login', (req) => {
@@ -88,6 +103,7 @@ export function buildConsoleRouter(deps: ConsoleDeps): Router {
   r.post('/login', (req) => {
     const g = gate(req);
     if (g) return g;
+    if (crossSite(req)) return wrap(htmlRes(403, loginPage(deps.cfg, 'Sign-in refused: the request did not come from this console.')));
     if (!auth.loginAllowed(req.clientIp)) return wrap(htmlRes(429, loginPage(deps.cfg, 'Too many attempts. Wait ten minutes.'), { 'retry-after': '600' }));
     const form = new URLSearchParams(req.body?.toString('utf8') ?? '');
     const user = (form.get('user') ?? '').slice(0, 64);
@@ -101,7 +117,8 @@ export function buildConsoleRouter(deps: ConsoleDeps): Router {
     deps.log.info('console login', { user });
     return wrap(redirect(303, '/', { 'set-cookie': cookie }));
   }, 'login_post');
-  r.post('/logout', (req) => requireAuth(req, (rq) => {
+  // signing someone out is a state change like any other; the form carries the token
+  r.post('/logout', (req) => requireCsrf(req, (rq) => {
     auth.destroy(rq);
     return redirect(303, '/login', { 'set-cookie': auth.clearCookie() });
   }), 'logout');
@@ -295,7 +312,8 @@ export function buildConsoleRouter(deps: ConsoleDeps): Router {
     } catch {
       return j(400, { error: 'bad json' });
     }
-    const outDir = join(deps.rootDir, 'reports');
+    // under the data dir: the container's root filesystem is read-only, and /app/reports was EROFS every time
+    const outDir = deps.cfg.reportsDir;
     const result = generateReport({ db: deps.db, cat: deps.cat, registry: deps.registry, heuristicsVersion: deps.heuristics().version, appVersion: deps.cfg.version }, { experimentId: body.experiment ?? null, range: q.parseRange(body.range ?? '7d'), outDir, level: 'public' });
     auth.audit(s.user, 'report', result.dir);
     return j(200, { ok: true, ...result });

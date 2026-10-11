@@ -17,6 +17,8 @@ quantara.cv {
 		reverse_proxy 127.0.0.1:8080 {
 			header_up X-Forwarded-Proto {scheme}
 			header_up X-Real-IP {remote_host}
+			# not behind cloudflare: a visitor's own CF-Connecting-IP must not reach the app
+			header_up -CF-Connecting-IP
 		}
 	}
 
@@ -32,6 +34,7 @@ quantara.cv {
 			reverse_proxy 127.0.0.1:8081 {
 				header_up X-Forwarded-Proto {scheme}
 				header_up X-Real-IP {remote_host}
+				header_up -CF-Connecting-IP
 			}
 		}
 		respond 404
