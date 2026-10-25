@@ -68,10 +68,10 @@ Things that bit during the first deploy, now baked into `install.sh`: `caddy has
 | task | command |
 |---|---|
 | logs | `docker compose logs -f` (json lines; app also rotates its own under `/data/logs`) |
-| upgrade | `git pull && docker compose build --pull && docker compose up -d` |
-| backup | `sqlite3 data/swarmglass.db ".backup data/backup-$(date +%F).db"` (or copy the file while the app is stopped) |
+| upgrade | `cd ~/swarmglass && git pull && bash deploy/quantara-nood/install.sh` (the clone and the compose dir are two different places: `~/swarmglass` is the checkout, `/opt/swarmglass` is the rsync'd copy the container builds from, and it has no `.git` — `install.sh` does the rsync, build and restart, keeps `.env`/`.secrets.txt`/`data/`, and leaves the Caddy blocks alone once they exist) |
+| backup | `sudo sqlite3 /opt/swarmglass/data/swarmglass.db ".backup /opt/swarmglass/data/backup-$(date +%F).db"` — `sqlite3` is **not** installed on quantara-nood out of the box (`sudo apt install -y sqlite3` once), and `data/` is owned by the container uid, hence the sudo. Or copy the file while the app is stopped |
 | retention purge now | `docker compose exec swarmglass node --disable-warning=ExperimentalWarning tools/purge.ts --vacuum` |
-| rescore after editing heuristics | `docker compose exec swarmglass node --disable-warning=ExperimentalWarning tools/rescore.ts` |
+| rescore after editing heuristics | `docker compose exec swarmglass node --disable-warning=ExperimentalWarning tools/rescore.ts --limit 20000` — the default limit is 5000, so without a number bigger than the session count it quietly rescores a slice and leaves the rest on the old heuristics |
 | report | `docker compose exec swarmglass node --disable-warning=ExperimentalWarning tools/report.ts --experiment SGX-001 --range 30d --out /data/reports` (the root filesystem is read-only; the console's *generate observation report* button writes to `SWARMGLASS_REPORTS_DIR`, default `/data/reports`, on its own) |
 | health | `GET /api/v1/status` on 8080 (public, also the Docker healthcheck); `GET /healthz` on 8081 |
 | disk | the disk guard degrades writes at 90% of `SWARMGLASS_MAX_DB_MB` and purges the oldest 10% of events at 100%; the console's settings page shows the state |
@@ -81,7 +81,9 @@ Things that bit during the first deploy, now baked into `install.sh`: `caddy has
 Two things the container cannot do for you:
 
 1. **Caddy.** The installer leaves an existing `/etc/caddy/Caddyfile` alone. Add the three `header_up` lines from the public block of `deploy/caddy/Caddyfile.optionA` (`-CF-Connecting-IP`, `X-Swarmglass-Proto`, `X-Swarmglass-TLS`) and `-CF-Connecting-IP` to the console block, `caddy validate`, `systemctl reload caddy`. Until then `http_version` stays 1.1 for everyone and the TLS columns stay empty; nothing else depends on it.
-2. **Rescore.** Heuristics v5 changed the rules: `docker compose exec swarmglass node --disable-warning=ExperimentalWarning tools/rescore.ts`. The stack signatures of older rows are backfilled on the first start; the first clustering run after that writes the new pool profiles.
+2. **Rescore.** Heuristics v5 changed the rules: `docker compose exec swarmglass node --disable-warning=ExperimentalWarning tools/rescore.ts --limit 20000` — mind the default limit of 5000, which covers a slice and no more. The stack signatures of older rows are backfilled on the first start; the first clustering run after that writes the new pool profiles.
+
+Both done on quantara-nood 2026-10-25: the four `header_up` lines are in (`Caddyfile.pre-stackheaders-20261025T230720Z` is the backup), and all 10,325 sessions are on v5 with 36 clusters. Requests after the reload carry `http_version` 2.0 and a `tls` line; anything older than that is 1.1 with an empty one, which is the reload and not the data.
 
 ## Rollback
 
