@@ -43,6 +43,7 @@ A honeypot advertises itself to the parts of the internet that are looking for t
 | rate abuse | token bucket per truncated address (30 rps, burst 120 default) → 429 with `Retry-After`; global limits at the proxy |
 | disk exhaustion | writer queue bound (20 k), disk guard (degrade at 90%, purge at 100%), log rotation, `mem_limit` |
 | header spoofing of client address | `X-Real-IP` / `X-Forwarded-For` honoured only from `SWARMGLASS_TRUSTED_PROXIES`; `CF-Connecting-IP` only when `SWARMGLASS_TRUST_CF_CONNECTING_IP=true` as well, because a direct origin's proxy passes a visitor's own copy of it through (and the shipped proxy configs strip it); a forwarded value that is not an address is ignored outright |
+| forged transport details | `X-Swarmglass-Proto` / `X-Swarmglass-TLS` honoured only from a trusted peer; the shipped proxy configs *set* them, so a visitor's own copy is replaced before it arrives. A forged value could only ever mislabel the forger's own rows |
 | synthetic tagging by outsiders | the tag header is a shared secret compared in constant time; without it the request is real traffic with a curious header |
 | canary forgery | canaries are HMACs; a made-up id is recorded as a sighting of an unknown canary and carries no attribution |
 | cache poisoning of per-actor arms | `Vary: Accept` on pages, `Cache-Control: no-store` on anything actor-specific, `Bypass` recommended if a CDN ever sits in front |

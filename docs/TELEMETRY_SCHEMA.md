@@ -60,6 +60,9 @@ One row per request, including rate-limited (429) and client-error (parse failur
 | `referer`, `referer_internal` | same-site path, or external hostname |
 | `query_json` | sanitized `{k: v}`; secret-looking keys redacted |
 | `header_names`, `header_order_hash`, `header_count` | wire-order header names |
+| `stack_hash` | the header order with cookie, referer, the conditional pair and the proxy's own additions removed: the client stack's signature, the same on every request a library makes whatever user-agent string it wears. Migration 003; backfilled at boot for older rows |
+| `http_version` | the client's own protocol version when the proxy forwards it (`X-Swarmglass-Proto`, see `deploy/`), otherwise the version of the hop that reached the app (always 1.1 behind caddy) |
+| `extra_json.tls` | the TLS version, cipher suite and ALPN protocol the trusted proxy negotiated with the client, when forwarded (`X-Swarmglass-TLS`); absent otherwise. `extra_json` also carries `connection` and `te` values alongside the other allowlisted headers |
 | `cookie_present`, `cookie_valid` | |
 | `negotiated` | representation served: `html` · `json` · `text` · `yaml` · `xml` |
 | `robots_disallowed` | 1 if the path is disallowed by robots.txt for this actor |

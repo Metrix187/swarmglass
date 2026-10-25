@@ -13,11 +13,11 @@ What is recorded, what is not, how it is transformed, how long it lives, and wha
 | user-agent | bounded raw string on the session + hash on events | family labelling (treated as a claim) |
 | `Accept`, `Accept-Language`, `Accept-Encoding` | bounded raw | negotiation behaviour |
 | referer | same-site: path; other sites: **hostname only** | navigation graph; never a foreign URL with its query string |
-| header *names* in wire order + a hash of that order + count | names only | client fingerprint at family level |
+| header *names* in wire order + a hash of that order + count, and the same hash with cookie, referer and the proxy's additions removed (`stack_hash`) | names only | client fingerprint at family level: which http library, not which machine |
 | a short allowlist of harmless header values (`Sec-Fetch-*`, `Sec-CH-UA*`, `DNT`, `Cache-Control`, `Range`, `If-*`, `X-Requested-With`, `Purpose`) | bounded | browser-vs-library signals |
 | cookie presence and validity | booleans | continuity |
 | request body | **not stored**; the first 16 KB is scanned for canaries and only matches are kept, plus size and content-type | write attempts are interesting, contents are not |
-| TLS/HTTP version, scheme | from the proxy headers | protocol behaviour |
+| HTTP version, scheme, and the TLS version, cipher suite and ALPN protocol the proxy negotiated with the client | from the trusted proxy's headers (`X-Swarmglass-Proto`, `X-Swarmglass-TLS`): version and suite names only, no keys, no certificates, no JA3-style hash | protocol behaviour; a client-stack class (a Go program and a browser do not pick the same cipher), not an identity |
 | canaries exposed / seen | identifiers | the point of the exercise |
 | experiment cohorts | arm ids | comparison |
 

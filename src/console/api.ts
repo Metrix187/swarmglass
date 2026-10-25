@@ -8,6 +8,8 @@ import { ngrams } from '../util/text.ts';
 import { dayKey, median, percentile } from '../util/time.ts';
 import { compareExperiment, type Comparison } from '../experiments/compare.ts';
 import { isScannerPath } from '../http/security.ts';
+import { buildLinkGraph, channelPage, findHandoffs, handoffComponents, type Discovery, type Fetch } from '../telemetry/handoff.ts';
+import { UA_RULES, familyCategory } from '../telemetry/ua.ts';
 
 // read-side queries for the research console. everything returns plain json-able objects.
 // `synthetic` is always an explicit filter so test traffic never sneaks into a real chart.
@@ -119,7 +121,7 @@ export function listSessions(d: QueryDeps, o: SessionListOpts): { total: number;
     args.push(`%"${o.experiment}":"${o.arm ?? ''}%`);
   }
   if (o.signature) {
-    where.push('id IN (SELECT DISTINCT session_id FROM events WHERE header_order_hash = ?)');
+    where.push('id IN (SELECT DISTINCT session_id FROM events WHERE stack_hash = ?)');
     args.push(o.signature);
   }
   if (o.minRequests) {
@@ -258,7 +260,45 @@ export function clusterDetail(d: QueryDeps, id: string): Record<string, unknown>
   }
   const metrics = r.kind === 'swarm' ? swarmMetrics(d, id) : null;
   const activity = activityGrid(d.db, 'session_id IN (SELECT id FROM sessions WHERE cluster_id = ?)', [id]);
-  return { ...r, signals: JSON.parse(r.signals_json), summary: parseSummary(r.summary_json), summary_json: undefined, members, page_matrix: pageMatrix, metrics, activity };
+  const summary = parseSummary(r.summary_json);
+  const related = r.kind === 'swarm' ? relatedSwarms(d, id, summary) : [];
+  const pool = r.kind === 'swarm' ? poolGrowth(d, id) : null;
+  return { ...r, signals: JSON.parse(r.signals_json), summary, summary_json: undefined, members, page_matrix: pageMatrix, metrics, activity, related, pool };
+}
+
+// other pools this one may be the same operator as: addresses in common, or the same http stack underneath
+function relatedSwarms(d: QueryDeps, id: string, summary: Record<string, unknown> | null): Array<Record<string, unknown>> {
+  const others = d.db.all<{ id: string; label: string; size: number; summary_json: string | null; window_start: number; window_end: number }>("SELECT id, label, size, summary_json, window_start, window_end FROM clusters WHERE kind = 'swarm' AND id != ?", id);
+  const out: Array<Record<string, unknown>> = [];
+  for (const o of others) {
+    const shared = d.db.get<{ n: number }>('SELECT COUNT(DISTINCT ip_trunc) AS n FROM sessions WHERE cluster_id = ? AND ip_trunc IN (SELECT ip_trunc FROM sessions WHERE cluster_id = ? AND ip_trunc IS NOT NULL)', o.id, id)?.n ?? 0;
+    const os = parseSummary(o.summary_json);
+    const sameStack = Boolean(summary?.stack && os?.stack && summary.stack === os.stack);
+    const sameFamily = Boolean(summary?.ua_family && os?.ua_family === summary.ua_family);
+    if (shared < 3 && !sameStack) continue;
+    out.push({ id: o.id, label: o.label, size: o.size, shared_prefixes: shared, same_stack: sameStack, same_family: sameFamily, ua_family: os?.ua_family ?? null, window_start: o.window_start, window_end: o.window_end });
+  }
+  return out.sort((a, b) => (b.shared_prefixes as number) - (a.shared_prefixes as number));
+}
+
+// the pool over time: how many addresses it used each day, and how many of those it had never used before
+function poolGrowth(d: QueryDeps, id: string): Array<Record<string, unknown>> {
+  const rows = d.db.all<{ ip_trunc: string | null; started_at: number }>('SELECT ip_trunc, started_at FROM sessions WHERE cluster_id = ? ORDER BY started_at ASC', id);
+  const seen = new Set<string>();
+  const days = new Map<string, { day: string; sessions: number; prefixes: Set<string>; new_prefixes: number }>();
+  for (const r of rows) {
+    const p = r.ip_trunc ?? '?';
+    const day = dayKey(r.started_at);
+    const cell = days.get(day) ?? { day, sessions: 0, prefixes: new Set<string>(), new_prefixes: 0 };
+    cell.sessions++;
+    cell.prefixes.add(p);
+    if (!seen.has(p)) {
+      seen.add(p);
+      cell.new_prefixes++;
+    }
+    days.set(day, cell);
+  }
+  return [...days.values()].map((c) => ({ day: c.day, sessions: c.sessions, prefixes: c.prefixes.size, new_prefixes: c.new_prefixes, returning_prefixes: c.prefixes.size - c.new_prefixes }));
 }
 
 // the three curves F-001 asked for: does the pool run out of new pages, which pages does it come back to and how
@@ -557,16 +597,19 @@ function parseCounts(json: string | null): Record<string, number> {
 
 export function signatures(d: QueryDeps, range: Range, synthetic: 'real' | 'synthetic' | 'all'): Array<Record<string, unknown>> {
   const sf = synthFilter(synthetic);
-  const rows = d.db.all<{ h: string; names: string | null; sessions: number; actors: number; requests: number; prefixes: number; uas: number; families: string | null; first: number; last: number; pages: number }>(
-    `SELECT e.header_order_hash AS h, MIN(e.header_names) AS names, COUNT(DISTINCT e.session_id) AS sessions, COUNT(DISTINCT s.actor_hash) AS actors, COUNT(*) AS requests, COUNT(DISTINCT s.ip_trunc) AS prefixes, COUNT(DISTINCT s.ua_hash) AS uas, GROUP_CONCAT(DISTINCT s.ua_family) AS families, MIN(e.ts) AS first, MAX(e.ts) AS last, COUNT(DISTINCT e.page_id) AS pages
+  // keyed on the stack signature (names minus cookie, referer and the proxy's additions) so a session that
+  // returned its cookie is one row, not two; the names shown are one request's, as sent
+  const rows = d.db.all<{ h: string; names: string | null; sessions: number; actors: number; requests: number; prefixes: number; uas: number; families: string | null; first: number; last: number; pages: number; versions: string | null; tls: string | null; encodings: string | null }>(
+    `SELECT e.stack_hash AS h, MIN(e.header_names) AS names, COUNT(DISTINCT e.session_id) AS sessions, COUNT(DISTINCT s.actor_hash) AS actors, COUNT(*) AS requests, COUNT(DISTINCT s.ip_trunc) AS prefixes, COUNT(DISTINCT s.ua_hash) AS uas, GROUP_CONCAT(DISTINCT s.ua_family) AS families, MIN(e.ts) AS first, MAX(e.ts) AS last, COUNT(DISTINCT e.page_id) AS pages, GROUP_CONCAT(DISTINCT e.http_version) AS versions, GROUP_CONCAT(DISTINCT json_extract(e.extra_json, '$.tls')) AS tls, GROUP_CONCAT(DISTINCT e.accept_enc) AS encodings
      FROM events e JOIN sessions s ON s.id = e.session_id
-     WHERE e.ts >= ? AND e.ts <= ? AND e.header_order_hash IS NOT NULL AND e.header_names != ''${sf.sql.replace('synthetic', 'e.synthetic')}
-     GROUP BY e.header_order_hash HAVING sessions >= 2 ORDER BY sessions DESC LIMIT 80`,
+     WHERE e.ts >= ? AND e.ts <= ? AND e.stack_hash IS NOT NULL AND e.header_names != ''${sf.sql.replace('synthetic', 'e.synthetic')}
+     GROUP BY e.stack_hash HAVING sessions >= 2 ORDER BY sessions DESC LIMIT 80`,
     range.since, range.until, ...sf.args,
   );
   return rows.map((r) => {
-    const uaRows = d.db.all<{ ua: string | null; n: number }>('SELECT ua, COUNT(*) AS n FROM sessions WHERE id IN (SELECT DISTINCT session_id FROM events WHERE header_order_hash = ? AND ts >= ? AND ts <= ?) GROUP BY ua ORDER BY n DESC LIMIT 4', r.h, range.since, range.until);
+    const uaRows = d.db.all<{ ua: string | null; n: number }>('SELECT ua, COUNT(*) AS n FROM sessions WHERE id IN (SELECT DISTINCT session_id FROM events WHERE stack_hash = ? AND ts >= ? AND ts <= ?) GROUP BY ua ORDER BY n DESC LIMIT 4', r.h, range.since, range.until);
     const names = (r.names ?? '').split(',').filter(Boolean);
+    const split = (s: string | null) => (s ?? '').split(',').map((x) => x.trim()).filter(Boolean);
     return {
       signature: r.h,
       header_names: names,
@@ -575,7 +618,11 @@ export function signatures(d: QueryDeps, range: Range, synthetic: 'real' | 'synt
       requests: r.requests,
       prefixes: r.prefixes,
       ua_strings: r.uas,
-      families: (r.families ?? '').split(',').filter(Boolean),
+      families: split(r.families),
+      http_versions: split(r.versions),
+      // group_concat splits the tls string's own spaces apart from nothing; the values carry no commas
+      tls: split(r.tls),
+      accept_encodings: split(r.encodings).slice(0, 4),
       pages: r.pages,
       first_seen: r.first,
       last_seen: r.last,
@@ -645,4 +692,128 @@ export function actorDetail(d: QueryDeps, actorHash: string): Record<string, unk
     exposed_by_session: exposedBySession,
     sightings: enriched,
   };
+}
+
+// ---- hand-offs: who got a url from whom. a reach of a page the actor was never shown, right after another actor
+// was shown a page that links there. the shared-queue signature of a corpus-building pool, measured over every
+// page in the seed's link graph and every actor in the range, whatever strings and stacks they wear ----
+
+export function handoffs(d: QueryDeps, range: Range, synthetic: 'real' | 'synthetic' | 'all'): Record<string, unknown> {
+  const { db } = d;
+  const sf = synthFilter(synthetic);
+  const graph = buildLinkGraph(d.cat, d.registry.active().flatMap((x) => x.targets));
+  const discoveries: Discovery[] = db.all<{ session_id: string; page_id: string; ts: number; via: string; actor_hash: string }>(
+    `SELECT pd.session_id, pd.page_id, pd.ts, pd.via, s.actor_hash FROM page_discoveries pd JOIN sessions s ON s.id = pd.session_id WHERE pd.ts >= ? AND pd.ts <= ?${sf.sql.replace('synthetic', 's.synthetic')} ORDER BY pd.ts LIMIT 50000`,
+    range.since, range.until, ...sf.args,
+  ).map((r) => ({ session: r.session_id, actor: r.actor_hash, page: r.page_id, ts: r.ts, via: r.via }));
+  // the handing side may sit up to a day before the range, so a reach at the start of the window has its source
+  const fetches: Array<Fetch & { page: string }> = db.all<{ ts: number; page_id: string | null; resource_kind: string; path: string; session_id: string; actor_hash: string }>(
+    `SELECT e.ts, e.page_id, e.resource_kind, e.path, e.session_id, s.actor_hash FROM events e JOIN sessions s ON s.id = e.session_id WHERE e.ts >= ? AND e.ts <= ? AND e.status < 400 AND (e.page_id IS NOT NULL AND e.resource_kind IN ('page', 'alt', 'attachment') OR e.resource_kind IN ('robots', 'sitemap', 'feed', 'manifest', 'api', 'index'))${sf.sql.replace('synthetic', 'e.synthetic')} ORDER BY e.ts LIMIT 200000`,
+    range.since - 24 * 3_600_000, range.until, ...sf.args,
+  )
+    .map((r): (Fetch & { page: string }) | null => {
+      const page = r.page_id && ['page', 'alt', 'attachment'].includes(r.resource_kind) ? r.page_id : channelPage(r.resource_kind, r.path);
+      return page ? { ts: r.ts, actor: r.actor_hash, session: r.session_id, page } : null;
+    })
+    .filter((x): x is Fetch & { page: string } => x !== null);
+  const r = findHandoffs(graph, discoveries, fetches);
+  const comps = handoffComponents(r.handoffs).slice(0, 12);
+  const actorIds = [...new Set([...comps.flatMap((c) => c.actors), ...r.handoffs.slice(-80).flatMap((h) => [h.from_actor, h.to_actor])])];
+  const actors = actorInfo(d, actorIds);
+  const components = comps.map((c) => {
+    const members = c.actors.map((a) => actors.get(a) ?? { actor: a, ua_family: null, sessions: 0, prefixes: 0, cluster_id: null, likely_class: null });
+    const families = [...new Set(members.map((m) => m.ua_family ?? 'none'))].sort();
+    const prefixes = members.reduce((acc, m) => acc + m.prefixes, 0);
+    const swarms = [...new Set(members.map((m) => m.cluster_id).filter((x): x is string => Boolean(x) && (x as string).startsWith('SW-')))];
+    const edges = r.handoffs.filter((h) => c.actors.includes(h.from_actor) && c.actors.includes(h.to_actor));
+    const lags = edges.map((h) => h.lag_ms);
+    return { actors: members.slice(0, 40), actor_count: c.actors.length, edges: c.edges, pages: c.pages, families, prefixes, swarms, median_lag_ms: lags.length ? median(lags) : null, first: edges.length ? edges[0]!.ts : null, last: edges.length ? edges[edges.length - 1]!.ts : null };
+  });
+  const sample = r.handoffs.slice(-80).reverse().map((h) => ({ ...h, from_family: actors.get(h.from_actor)?.ua_family ?? null, to_family: actors.get(h.to_actor)?.ua_family ?? null }));
+  return { considered: r.considered, explained: r.explained, handoffs: r.handoffs.length, unsourced: r.unsourced, share: r.share, median_lag_ms: r.median_lag_ms, top_pages: r.top_pages, components, sample };
+}
+
+interface ActorInfo {
+  actor: string;
+  ua_family: string | null;
+  sessions: number;
+  prefixes: number;
+  cluster_id: string | null;
+  likely_class: string | null;
+}
+
+function actorInfo(d: QueryDeps, ids: string[]): Map<string, ActorInfo> {
+  const out = new Map<string, ActorInfo>();
+  for (let i = 0; i < ids.length; i += 400) {
+    const chunk = ids.slice(i, i + 400);
+    for (const r of d.db.all<ActorInfo>(`SELECT actor_hash AS actor, MAX(ua_family) AS ua_family, COUNT(*) AS sessions, COUNT(DISTINCT ip_trunc) AS prefixes, MAX(cluster_id) AS cluster_id, MAX(likely_class) AS likely_class FROM sessions WHERE actor_hash IN (${chunk.map(() => '?').join(',')}) GROUP BY actor_hash`, ...chunk)) out.set(r.actor, r);
+  }
+  return out;
+}
+
+// ---- llm traffic: every self-declared model crawler and on-demand fetcher, what it reads, whether it comes as a
+// pool, and whether urls move between it and anyone else. the families are claims; the rest is behaviour ----
+
+export function llmTraffic(d: QueryDeps, range: Range, synthetic: 'real' | 'synthetic' | 'all'): Record<string, unknown> {
+  const { db } = d;
+  const sf = synthFilter(synthetic);
+  const aiFamilies = UA_RULES.filter((r) => r.category === 'ai_crawler' || r.category === 'ai_fetcher').map((r) => r.family);
+  const ph = aiFamilies.map(() => '?').join(',');
+  const rows = db.all<{ ua_family: string; sessions: number; actors: number; prefixes: number; requests: number; machine: number; disallowed: number; cookies: number; one_hit: number; first: number; last: number; clusters: string | null }>(
+    `SELECT ua_family, COUNT(*) AS sessions, COUNT(DISTINCT actor_hash) AS actors, COUNT(DISTINCT ip_trunc) AS prefixes, SUM(n_requests) AS requests, SUM(n_machine) AS machine, SUM(n_disallowed) AS disallowed, SUM(cookie_returned) AS cookies, SUM(CASE WHEN n_requests <= 2 THEN 1 ELSE 0 END) AS one_hit, MIN(started_at) AS first, MAX(last_seen_at) AS last, GROUP_CONCAT(DISTINCT cluster_id) AS clusters FROM sessions WHERE started_at >= ? AND started_at <= ? AND ua_family IN (${ph})${sf.sql} GROUP BY ua_family ORDER BY sessions DESC`,
+    range.since, range.until, ...aiFamilies, ...sf.args,
+  );
+  // urls moving between actors, with each side's family, once for every family below
+  const hx = handoffs(d, range, synthetic) as { sample: Array<{ from_family: string | null; to_family: string | null }>; handoffs: number };
+  const families = rows.map((r) => {
+    const esf = sf.sql.replace('synthetic', 'e.synthetic');
+    const ev = db.get<{ n: number; alt: number; llms: number; manifests: number; robots: number; hidden: number; h2: number; pages: number; conditional: number }>(
+      `SELECT COUNT(*) AS n, SUM(CASE WHEN e.resource_kind = 'alt' THEN 1 ELSE 0 END) AS alt, SUM(CASE WHEN e.route_id = 'llms_txt' THEN 1 ELSE 0 END) AS llms, SUM(CASE WHEN e.resource_kind IN ('manifest', 'api') THEN 1 ELSE 0 END) AS manifests, SUM(CASE WHEN e.resource_kind = 'robots' THEN 1 ELSE 0 END) AS robots, SUM(CASE WHEN e.discover_class IS NOT NULL AND e.discover_class != 'visible' AND e.status < 400 THEN 1 ELSE 0 END) AS hidden, SUM(CASE WHEN e.http_version = '2.0' OR e.http_version = '3.0' THEN 1 ELSE 0 END) AS h2, COUNT(DISTINCT e.page_id) AS pages, SUM(CASE WHEN e.header_names LIKE '%if-none-match%' OR e.header_names LIKE '%if-modified-since%' THEN 1 ELSE 0 END) AS conditional FROM events e JOIN sessions s ON s.id = e.session_id WHERE s.ua_family = ? AND e.ts >= ? AND e.ts <= ?${esf}`,
+      r.ua_family, range.since, range.until, ...sf.args,
+    ) ?? { n: 0, alt: 0, llms: 0, manifests: 0, robots: 0, hidden: 0, h2: 0, pages: 0, conditional: 0 };
+    const topPages = db.all<{ page_id: string; n: number }>(`SELECT e.page_id, COUNT(DISTINCT e.session_id) AS n FROM events e JOIN sessions s ON s.id = e.session_id WHERE s.ua_family = ? AND e.ts >= ? AND e.ts <= ? AND e.page_id IS NOT NULL AND e.status < 400${esf} GROUP BY e.page_id ORDER BY n DESC LIMIT 6`, r.ua_family, range.since, range.until, ...sf.args);
+    const stacks = db.all<{ k: string | null; n: number }>(`SELECT e.stack_hash AS k, COUNT(*) AS n FROM events e JOIN sessions s ON s.id = e.session_id WHERE s.ua_family = ? AND e.ts >= ? AND e.ts <= ?${esf} GROUP BY e.stack_hash ORDER BY n DESC LIMIT 4`, r.ua_family, range.since, range.until, ...sf.args);
+    const tls = db.all<{ k: string | null; n: number }>(`SELECT json_extract(e.extra_json, '$.tls') AS k, COUNT(*) AS n FROM events e JOIN sessions s ON s.id = e.session_id WHERE s.ua_family = ? AND e.ts >= ? AND e.ts <= ?${esf} GROUP BY k ORDER BY n DESC LIMIT 3`, r.ua_family, range.since, range.until, ...sf.args);
+    const classes = Object.fromEntries(db.all<{ c: string | null; n: number }>(`SELECT likely_class AS c, COUNT(*) AS n FROM sessions WHERE ua_family = ? AND started_at >= ? AND started_at <= ?${sf.sql} GROUP BY c ORDER BY n DESC`, r.ua_family, range.since, range.until, ...sf.args).map((x) => [x.c ?? 'unscored', x.n]));
+    const canaries = db.get<{ n: number; xa: number }>(`SELECT COUNT(*) AS n, SUM(cs.cross_actor) AS xa FROM canary_sightings cs JOIN sessions s ON s.id = cs.session_id WHERE s.ua_family = ? AND cs.ts >= ? AND cs.ts <= ?`, r.ua_family, range.since, range.until) ?? { n: 0, xa: 0 };
+    const out = hx.sample.filter((h) => h.from_family === r.ua_family).length;
+    const inn = hx.sample.filter((h) => h.to_family === r.ua_family).length;
+    const partners = [...new Set(hx.sample.filter((h) => h.from_family === r.ua_family || h.to_family === r.ua_family).map((h) => (h.from_family === r.ua_family ? h.to_family : h.from_family) ?? 'none'))];
+    const n = ev.n || 1;
+    return {
+      family: r.ua_family,
+      category: familyCategory(r.ua_family),
+      sessions: r.sessions,
+      actors: r.actors,
+      prefixes: r.prefixes,
+      requests: r.requests,
+      one_hit_share: r.sessions ? Math.round((r.one_hit / r.sessions) * 100) / 100 : 0,
+      cookie_share: r.sessions ? Math.round((r.cookies / r.sessions) * 100) / 100 : 0,
+      pages: ev.pages,
+      alt_share: Math.round((ev.alt / n) * 1000) / 1000,
+      llms_txt: ev.llms,
+      manifests: ev.manifests,
+      robots: ev.robots,
+      disallowed: r.disallowed,
+      hidden_reaches: ev.hidden,
+      h2_share: Math.round((ev.h2 / n) * 1000) / 1000,
+      conditional_share: Math.round((ev.conditional / n) * 1000) / 1000,
+      stacks: stacks.map((s) => ({ stack: s.k, requests: s.n })),
+      tls: tls.filter((t) => t.k).map((t) => ({ tls: t.k, requests: t.n })),
+      classes,
+      pools: (r.clusters ?? '').split(',').filter((c) => c.startsWith('SW-')),
+      canaries: { presented: canaries.n, cross_actor: canaries.xa ?? 0 },
+      handoffs: { out, in: inn, partners },
+      top_pages: topPages.map((p) => ({ page: p.page_id, sessions: p.n })),
+      first_seen: r.first,
+      last_seen: r.last,
+    };
+  });
+  const pools = db.all<{ id: string; label: string; size: number; summary_json: string | null; window_start: number; window_end: number }>("SELECT id, label, size, summary_json, window_start, window_end FROM clusters WHERE kind = 'swarm' AND window_end >= ? ORDER BY size DESC", range.since)
+    .map((p) => ({ id: p.id, label: p.label, size: p.size, window_start: p.window_start, window_end: p.window_end, summary: parseSummary(p.summary_json) }))
+    .filter((p) => {
+      const s = p.summary as { ua_family?: string; families?: string[] } | null;
+      return Boolean(s && ((s.ua_family && aiFamilies.includes(s.ua_family)) || (s.families ?? []).some((f) => aiFamilies.includes(f))));
+    });
+  return { families, pools, handoffs: hx.handoffs, ai_families_known: aiFamilies };
 }

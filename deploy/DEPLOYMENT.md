@@ -76,6 +76,13 @@ Things that bit during the first deploy, now baked into `install.sh`: `caddy has
 | health | `GET /api/v1/status` on 8080 (public, also the Docker healthcheck); `GET /healthz` on 8081 |
 | disk | the disk guard degrades writes at 90% of `SWARMGLASS_MAX_DB_MB` and purges the oldest 10% of events at 100%; the console's settings page shows the state |
 
+## After upgrading to the 2026-10 build
+
+Two things the container cannot do for you:
+
+1. **Caddy.** The installer leaves an existing `/etc/caddy/Caddyfile` alone. Add the three `header_up` lines from the public block of `deploy/caddy/Caddyfile.optionA` (`-CF-Connecting-IP`, `X-Swarmglass-Proto`, `X-Swarmglass-TLS`) and `-CF-Connecting-IP` to the console block, `caddy validate`, `systemctl reload caddy`. Until then `http_version` stays 1.1 for everyone and the TLS columns stay empty; nothing else depends on it.
+2. **Rescore.** Heuristics v5 changed the rules: `docker compose exec swarmglass node --disable-warning=ExperimentalWarning tools/rescore.ts`. The stack signatures of older rows are backfilled on the first start; the first clustering run after that writes the new pool profiles.
+
 ## Rollback
 
 `docker compose down` removes the container; `data/` survives. Removing the two Caddy blocks and the two A records returns the world to exactly how it was. Nothing on the cPanel host changes except the static overview page you chose to add.

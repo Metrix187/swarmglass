@@ -257,7 +257,7 @@ test('synthetic personas are tagged, scored, and classified as designed', async 
   const result = await runSynthetic({ base, token: app.cfg.synthToken, personas: ['browser_human', 'naive_crawler', 'polite_searchbot', 'tool_discovery', 'retrieval_agent', 'scripted_agent', 'coordinated_swarm'], fast: true, seed: 3, workers: 3 });
   assert.ok(result.personas.every((p) => p.errors === 0), JSON.stringify(result.personas));
   flush();
-  const n = scoreSessions({ cfg: app.cfg, db: app.db, log: app.log, telemetry: app.telemetry, heuristics: app.heuristics, pageInfo: pageInfoFor(app.cat) }, { debounceMs: 0, all: true, limit: 500 });
+  const n = scoreSessions({ cfg: app.cfg, db: app.db, log: app.log, telemetry: app.telemetry, heuristics: app.heuristics, pageInfo: pageInfoFor(app.cat), cat: app.cat, registry: app.registry }, { debounceMs: 0, all: true, limit: 500 });
   assert.ok(n > 5);
   const rows = app.db.all<{ synthetic_persona: string; likely_class: string; n_requests: number }>('SELECT synthetic_persona, likely_class, n_requests FROM sessions WHERE synthetic = 1');
   assert.ok(rows.length >= 7);
@@ -276,7 +276,7 @@ test('synthetic personas are tagged, scored, and classified as designed', async 
   // the swarm: canary carried from worker 0 to worker 1 across distinct synthetic addresses
   const xs = app.db.get<{ n: number }>('SELECT COUNT(*) AS n FROM canary_sightings WHERE synthetic = 1 AND cross_actor = 1')!.n;
   assert.ok(xs >= 1, 'cross-actor sighting from the coordinated swarm');
-  const clusters = runClustering({ cfg: app.cfg, db: app.db, log: app.log, telemetry: app.telemetry, heuristics: app.heuristics, pageInfo: pageInfoFor(app.cat) });
+  const clusters = runClustering({ cfg: app.cfg, db: app.db, log: app.log, telemetry: app.telemetry, heuristics: app.heuristics, pageInfo: pageInfoFor(app.cat), cat: app.cat, registry: app.registry });
   assert.ok(clusters >= 0);
 });
 
@@ -551,7 +551,7 @@ test('console: history, signatures, activity and actor views answer from the sam
   const { cookie } = await consoleLogin();
   const c = (path: string) => fetch(consoleBase + path, { headers: { cookie } });
   // the scheduler is off in tests; roll today up by hand so the history has something to read back
-  rollupDaily({ cfg: app.cfg, db: app.db, log: app.log, telemetry: app.telemetry, heuristics: app.heuristics, pageInfo: pageInfoFor(app.cat) });
+  rollupDaily({ cfg: app.cfg, db: app.db, log: app.log, telemetry: app.telemetry, heuristics: app.heuristics, pageInfo: pageInfoFor(app.cat), cat: app.cat, registry: app.registry });
   const hist = await (await c('/api/history?days=7&synthetic=all')).json() as { days: Array<{ day: string; requests: number; by_kind: Record<string, number> }> };
   assert.ok(hist.days.length >= 1);
   const today = hist.days[hist.days.length - 1]!;
@@ -602,4 +602,60 @@ test('the proxy\'s view of the handshake is recorded from a trusted peer, and th
   }
   assert.equal(rows[0]!.stack_hash, rows[1]!.stack_hash, 'the cookie on the second request changes the header order, not the stack');
   assert.notEqual(rows[0]!.header_order_hash, rows[1]!.header_order_hash);
+});
+
+test('a pool of one-hit addresses is found as a swarm and described: profile, hand-offs, growth, related pools', async () => {
+  // fourteen addresses in fourteen different /24s, one page each, the same string, never a stylesheet
+  for (let i = 1; i <= 14; i++) await get(`/wiki/${i % 2 ? 'Colony_Glossary' : 'Release_History'}`, { headers: { 'user-agent': 'pool-probe/1', 'x-real-ip': `100.64.${i}.1`, 'x-swarmglass-proto': 'HTTP/1.1', 'x-swarmglass-tls': 'tls1.2 TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 http/1.1' } });
+  flush();
+  runClustering({ cfg: app.cfg, db: app.db, log: app.log, telemetry: app.telemetry, heuristics: app.heuristics, pageInfo: pageInfoFor(app.cat), cat: app.cat, registry: app.registry });
+  const sw = app.db.get<{ id: string; label: string; summary_json: string }>("SELECT id, label, summary_json FROM clusters WHERE kind = 'swarm' AND synthetic = 0 ORDER BY size DESC LIMIT 1");
+  assert.ok(sw, 'the pool is a swarm');
+  const summary = JSON.parse(sw!.summary_json) as { by: string; tier: string; sessions: number; prefixes: number; profile: { requests: number; methods: Record<string, number>; http_versions: Record<string, number>; tls: Record<string, number>; shares: { cookie: number }; stacks: Array<{ names: string[] }> }; handoffs: { considered: number; handoffs: number } };
+  assert.equal(summary.by, 'ua');
+  assert.equal(summary.tier, 'strict');
+  assert.equal(summary.sessions, 14);
+  assert.equal(summary.prefixes, 14);
+  assert.equal(summary.profile.requests, 14);
+  assert.equal(summary.profile.methods.GET, 14);
+  assert.equal(summary.profile.http_versions['1.1'], 14);
+  assert.ok(Object.keys(summary.profile.tls)[0]!.startsWith('tls1.2'), 'the forwarded handshake lands in the profile');
+  assert.equal(summary.profile.shares.cookie, 0);
+  assert.ok(summary.profile.stacks[0]!.names.includes('user-agent'));
+  assert.equal(summary.handoffs.handoffs, 0, 'nobody handed anybody a url: entry pages only');
+  const { cookie } = await consoleLogin();
+  const d = await (await fetch(consoleBase + `/api/clusters/${sw!.id}`, { headers: { cookie } })).json() as { kind: string; pool: Array<{ day: string; prefixes: number; new_prefixes: number; returning_prefixes: number }>; related: unknown[]; summary: { profile: unknown }; activity: { total: number } };
+  assert.equal(d.kind, 'swarm');
+  assert.equal(d.pool.length, 1);
+  assert.equal(d.pool[0]!.prefixes, 14);
+  assert.equal(d.pool[0]!.new_prefixes, 14);
+  assert.equal(d.pool[0]!.returning_prefixes, 0);
+  assert.ok(Array.isArray(d.related));
+  assert.ok(d.summary.profile);
+  assert.equal(d.activity.total, 14);
+  const list = await (await fetch(consoleBase + '/api/clusters?range=24h&synthetic=real', { headers: { cookie } })).json() as { clusters: Array<{ id: string; kind: string; summary: { by: string } | null }> };
+  assert.ok(list.clusters.some((c) => c.id === sw!.id && c.kind === 'swarm' && c.summary?.by === 'ua'));
+});
+
+test('console: the llm and hand-off views answer, and a declared fetcher lands in the llm table with what it read', async () => {
+  const fetcher = 'Mozilla/5.0 (compatible; ChatGPT-User/1.0; +https://openai.com/bot)';
+  await get('/wiki/Main_Page', { headers: { 'user-agent': fetcher, 'x-real-ip': '100.65.1.9' } });
+  await get('/wiki/Tool_Registry.txt', { headers: { 'user-agent': fetcher, 'x-real-ip': '100.65.1.9' } });
+  await get('/llms.txt', { headers: { 'user-agent': 'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; GPTBot/1.4; +https://openai.com/gptbot)', 'x-real-ip': '100.65.2.9' } });
+  flush();
+  const { cookie } = await consoleLogin();
+  const llm = await (await fetch(consoleBase + '/api/llm?range=24h&synthetic=real', { headers: { cookie } })).json() as { families: Array<{ family: string; category: string; sessions: number; alt_share: number; llms_txt: number; stacks: unknown[]; pools: string[] }>; ai_families_known: string[]; pools: unknown[] };
+  const f = llm.families.find((x) => x.family === 'chatgpt-user');
+  assert.ok(f, JSON.stringify(llm.families.map((x) => x.family)));
+  assert.equal(f!.category, 'ai_fetcher');
+  assert.equal(f!.sessions, 1);
+  assert.ok(f!.alt_share > 0, 'it asked for the text alternate');
+  assert.ok(f!.stacks.length >= 1);
+  const g = llm.families.find((x) => x.family === 'gptbot');
+  assert.ok(g && g.llms_txt === 1, 'the crawler read llms.txt');
+  assert.ok(llm.ai_families_known.includes('claudebot'));
+  assert.ok(Array.isArray(llm.pools));
+  const ho = await (await fetch(consoleBase + '/api/handoffs?range=24h&synthetic=all', { headers: { cookie } })).json() as { considered: number; explained: number; handoffs: number; unsourced: number; components: unknown[]; sample: unknown[]; top_pages: unknown[] };
+  assert.ok(typeof ho.considered === 'number' && ho.handoffs >= 0 && Array.isArray(ho.components) && Array.isArray(ho.sample) && Array.isArray(ho.top_pages));
+  assert.equal(ho.considered, ho.explained + ho.handoffs + ho.unsourced, 'every reach that needed a source is accounted for');
 });

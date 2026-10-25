@@ -5,10 +5,13 @@ import type { Telemetry } from './capture.ts';
 import { computeFeatures, type EventRow, type PageInfo, type SessionRow } from './features.ts';
 import { score, type Heuristics } from './scoring.ts';
 import { clusterSessions, loadClusterSessions } from './cluster.ts';
-import { detectSwarms, loadSwarmSessions } from './swarm.ts';
+import { detectSwarms, loadSwarmSessions, swarmHandoffs, swarmProfile } from './swarm.ts';
+import { buildLinkGraph } from './handoff.ts';
 import { diskGuard, purgeOlderThan } from './retention.ts';
 import { randomId } from '../util/hash.ts';
-import { dayKey } from '../util/time.ts';
+import { dayKey, fmtDuration } from '../util/time.ts';
+import type { Catalog } from '../wiki/content.ts';
+import type { ExperimentRegistry } from '../experiments/registry.ts';
 
 export interface JobDeps {
   cfg: Config;
@@ -17,6 +20,8 @@ export interface JobDeps {
   telemetry: Telemetry;
   heuristics: () => Heuristics;
   pageInfo: (id: string) => PageInfo | undefined;
+  cat: Catalog;
+  registry: ExperimentRegistry;
 }
 
 // scores every session whose events changed since it was last scored.
@@ -65,6 +70,22 @@ export function runClustering(deps: JobDeps, windowMs = 24 * 3_600_000, swarmWin
   const clusters = clusterSessions(sessions);
   // swarms get the long window: at six new addresses an hour, a day of one-hit sessions is barely a hint
   const swarms = detectSwarms(loadSwarmSessions(db, Date.now() - swarmWindowMs));
+  // what each pool sends and takes, and whether its members pass urls to each other. the carrier experiments'
+  // targets are advertised on every article, so reaching one says nothing about a queue; they sit out
+  const graph = buildLinkGraph(deps.cat, deps.registry.active().flatMap((d) => d.targets));
+  for (const sw of swarms) {
+    try {
+      sw.summary.profile = swarmProfile(db, sw.members);
+      const h = swarmHandoffs(db, sw.members, graph) as { considered: number; handoffs: number; share: number; median_lag_ms: number | null };
+      sw.summary.handoffs = h;
+      if (h.handoffs >= 5 && h.share >= 0.2) {
+        sw.signals.push({ signal: 'shared_frontier', strength: Math.min(1, Math.round(h.share * 200) / 100), note: `${h.handoffs} of ${h.considered} reaches of a page the member was never shown came right after another member was shown a page linking there (median lag ${fmtDuration(h.median_lag_ms ?? 0)}): one queue, many addresses` });
+        sw.swarm_score = Math.round(Math.min(1, sw.signals.reduce((a, s) => a + s.strength, 0) / 3) * 1000) / 1000;
+      }
+    } catch (e) {
+      deps.log.warn('swarm profile failed', { swarm: sw.id, err: e instanceof Error ? e.message : String(e) });
+    }
+  }
   db.transaction(() => {
     db.run("DELETE FROM clusters WHERE kind = 'behaviour' AND window_end >= ?", since);
     db.run('UPDATE sessions SET cluster_id = NULL WHERE started_at >= ?', since);

@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 import { openDb } from '../src/db/db.ts';
 import { loadCatalog, pageInfoFor } from '../src/wiki/content.ts';
+import { ExperimentRegistry } from '../src/experiments/registry.ts';
 import { loadHeuristics } from '../src/telemetry/scoring.ts';
 import { scoreSessions, runClustering, rollupDaily, type JobDeps } from '../src/telemetry/jobs.ts';
 import { createLogger } from '../src/log.ts';
@@ -13,7 +14,8 @@ const cfg = cfgFor(flags);
 const db = openDb(cfg.dbPath);
 const cat = loadCatalog(cfg.seedDir);
 const heuristics = loadHeuristics(join(cfg.configDir, 'heuristics.json'));
-const deps = { cfg, db, log: createLogger({ level: 'info' }), heuristics: () => heuristics, pageInfo: pageInfoFor(cat), telemetry: null as unknown as JobDeps['telemetry'] };
+const registry = ExperimentRegistry.load(join(cfg.configDir, 'experiments'));
+const deps = { cfg, db, log: createLogger({ level: 'info' }), heuristics: () => heuristics, pageInfo: pageInfoFor(cat), cat, registry, telemetry: null as unknown as JobDeps['telemetry'] };
 const n = scoreSessions(deps, { all: true, limit: Number(str(flags, 'limit', '5000')) });
 console.log(`rescored ${n} sessions with heuristics v${heuristics.version}`);
 if (!flags['no-cluster']) console.log(`clusters: ${runClustering(deps)}`);

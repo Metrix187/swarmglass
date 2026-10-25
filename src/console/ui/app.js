@@ -295,7 +295,7 @@
       if (c.kind === 'swarm') {
         const s = c.summary || {};
         root.appendChild(card(`${c.id} · swarm · ${s.sessions} sessions across ${s.prefixes} prefixes · ${fmtTs(c.window_start)} → ${fmtTs(c.window_end)}${c.synthetic ? ' · SYNTHETIC' : ''}`,
-          h('p', null, tag(c.label, 'bad'), ' ', tag('ua: ' + (s.ua_family || 'none')), ' ', h('code', { class: 'muted' }, s.ua_sample || '')),
+          h('p', null, tag(c.label, 'bad'), ' ', s.by === 'stack' ? tag(`${s.ua_strings} user-agent strings on one stack`, 'rose') : null, s.tier === 'loose' ? tag('a few requests per address') : null, (c.signals || []).some((x) => x.signal === 'shared_frontier') ? tag('one queue, many addresses', 'bad') : null, (c.signals || []).some((x) => x.signal === 'metronomic_pool') ? tag('on a beat', 'lilac') : null, ' ', tag('ua: ' + (s.ua_family || 'none')), ' ', h('code', { class: 'muted' }, s.ua_sample || '')),
           h('div', { class: 'two' },
             h('div', null, h('h3', null, 'signals'), h('ul', { class: 'evidence' }, c.signals.map((x) => h('li', null, h('span', { class: 'w' }, x.strength.toFixed(2)), ` ${x.signal.replace(/_/g, ' ')}: ${x.note}`)))),
             h('div', null, h('h3', null, 'shape'), swarmShape(s))),
@@ -310,7 +310,29 @@
     }
   };
   function swarmShape(s) {
-    return kv({ sessions: s.sessions, requests: s.requests, 'network prefixes': `${s.prefixes} (${s.prefixes16} wider blocks)`, 'one-or-two-request sessions': pct(s.single_hit_share), 'asset share': pct(s.asset_share), 'conditional requests (If-None-Match etc.)': pct(s.conditional_share), 'pages touched': s.pages, 'a new address every': s.median_start_gap_ms ? fmtRel(s.median_start_gap_ms) : '—', 'first seen': s.first_seen ? fmtTs(s.first_seen) : '—', 'last seen': s.last_seen ? fmtTs(s.last_seen) : '—' });
+    return kv({ 'grouped by': s.by === 'stack' ? `one http stack behind ${s.ua_strings} user-agent strings (${(s.families || []).join(', ')})` : 'one exact user-agent string', tier: s.tier === 'loose' ? 'a few requests per address' : 'one or two requests per address', sessions: s.sessions, requests: s.requests, 'requests per session (median)': s.requests_per_session_median === undefined ? '—' : s.requests_per_session_median, 'network prefixes': `${s.prefixes} (${s.prefixes16} wider blocks)`, 'one-or-two-request sessions': pct(s.single_hit_share), 'asset share': pct(s.asset_share), 'conditional requests (If-None-Match etc.)': pct(s.conditional_share), 'pages touched': s.pages, 'a new address every': s.median_start_gap_ms ? fmtRel(s.median_start_gap_ms) : '—', cadence: s.cadence_ms ? `${fmtRel(s.cadence_ms)} ± 25% holds ${pct(s.cadence_share)} of the time` : '—', 'client stack': s.stack || '—', 'first seen': s.first_seen ? fmtTs(s.first_seen) : '—', 'last seen': s.last_seen ? fmtTs(s.last_seen) : '—' });
+  }
+  function fmtCounts(o) { return o && Object.keys(o).length ? Object.entries(o).map(([k, v]) => `${k} ${v}`).join(' · ') : '—'; }
+  function poolProfileCards(d) {
+    const out = [];
+    const pr = (d.summary || {}).profile;
+    if (pr) {
+      out.push(card('what the pool sends (every member request)', h('div', { class: 'two' },
+        h('div', null, kv({ requests: pr.requests, methods: fmtCounts(pr.methods), 'http versions': fmtCounts(pr.http_versions), 'tls, as the proxy saw it': fmtCounts(pr.tls), 'accept profiles': fmtCounts(pr.accept_profiles), 'accept-encoding': fmtCounts(pr.accept_encodings), 'accept-language': fmtCounts(pr.accept_languages) })),
+        h('div', null, kv({ 'cookie returned': pct(pr.shares.cookie), 'pragma on the request': pct(pr.shares.pragma), 'conditional (If-*)': pct(pr.shares.conditional), 'accept-language present': pct(pr.shares.accept_language), 'internal referer': pct(pr.shares.referer_internal), 'external referer': pct(pr.shares.referer_external), 'HEAD requests': pct(pr.shares.head) }), h('h3', null, 'http stacks (header order minus cookie, referer and the proxy)'), h('ul', { class: 'evidence' }, (pr.stacks || []).map((s) => h('li', null, h('span', { class: 'w' }, String(s.requests)), ' ', h('code', null, s.stack || 'none'), ' ', h('span', { class: 'muted small' }, (s.names || []).join(' → ')))))))));
+      out.push(card('what the pool takes', h('div', { class: 'two' },
+        h('div', null, kv({ 'resource kinds': fmtCounts(pr.kinds), 'status classes': fmtCounts(pr.statuses), representations: fmtCounts(pr.negotiated), 'query keys used': fmtCounts(pr.query_keys) })),
+        h('div', null, kv({ 'canaries shown to members': pr.canaries.exposed, 'canaries presented back': pr.canaries.presented, 'presented by an actor never shown them': pr.canaries.cross_actor })))));
+    }
+    const ho = (d.summary || {}).handoffs;
+    if (ho) out.push(card('urls passed between members (a member reaches a page it was never shown, right after another member was shown a page linking there)', [
+      kv({ 'reaches needing a source': ho.considered, 'explained by the member\'s own history': ho.explained, 'handed over by another member': ho.handoffs, 'no visible source (an index, a cache, prior knowledge)': ho.unsourced, 'share handed over': pct(ho.share), 'median lag': ho.median_lag_ms !== null && ho.median_lag_ms !== undefined ? fmtRel(ho.median_lag_ms) : '—' }),
+      (ho.sample || []).length ? table([{ label: 'when', render: (r) => fmtTs(r.ts) }, { label: 'shown to', render: (r) => sid(r.from_session) }, { label: 'fetched by', render: (r) => sid(r.to_session) }, { label: 'page', render: (r) => pageLink(r.page) }, { label: 'linked from', render: (r) => pageLink(r.parent) }, { label: 'lag', render: (r) => fmtRel(r.lag_ms) }], ho.sample) : null,
+      (ho.top_pages || []).length ? h('p', { class: 'hint' }, 'most handed over: ', ho.top_pages.map((p) => [pageLink(p.page), ` (${p.n}) `])) : null,
+    ]));
+    if (d.pool && d.pool.length) out.push(card('the pool over time: addresses per day, and how many it had never used before', table([{ label: 'day', key: 'day' }, { label: 'sessions', key: 'sessions', num: true }, { label: 'prefixes', key: 'prefixes', num: true }, { label: 'new', key: 'new_prefixes', num: true }, { label: 'returning', key: 'returning_prefixes', num: true }], d.pool)));
+    if (d.related && d.related.length) out.push(card('related pools (addresses in common, or the same http stack underneath: possibly one operator)', table([{ label: 'pool', render: (r) => link('#/cluster/' + r.id, r.id) }, { label: 'label', key: 'label' }, { label: 'sessions', key: 'size', num: true }, { label: 'ua', render: (r) => tag(r.ua_family || '') }, { label: 'shared prefixes', key: 'shared_prefixes', num: true }, { label: 'same stack', render: (r) => r.same_stack ? tag('yes', 'bad') : '' }, { label: 'window', render: (r) => `${fmtTs(r.window_start)} → ${fmtTs(r.window_end)}` }], d.related)));
+    return out;
   }
   views.cluster = async (root, params, id) => {
     const d = await api(`/api/clusters/${encodeURIComponent(id)}`);
@@ -324,6 +346,7 @@
     if (swarm) {
       // a 96-column matrix says nothing; for a swarm the question is which pages the pool was handed
       root.appendChild(card('shape', swarmShape(d.summary || {})));
+      for (const c of poolProfileCards(d)) root.appendChild(c);
       root.appendChild(card('pages touched, and by how many members', table([{ label: 'page', render: (r) => pageLink(r.page) }, { label: 'members', key: 'n', num: true }], pages.map((p) => ({ page: p, n: d.page_matrix[p].length })).sort((a, b) => b.n - a.n))));
       const m = d.metrics || {};
       if (m.saturation && m.saturation.length) root.appendChild(card('frontier saturation: new pages per hour (a corpus builder runs out of new pages, then comes back or leaves)', table([{ label: 'hour (utc)', render: (r) => fmtTs(r.hour).slice(0, 13) + ':00' }, { label: 'requests', key: 'requests', num: true }, { label: 'new pages', key: 'fresh', num: true }, { label: 'new share', render: (r) => pct(r.requests ? r.fresh / r.requests : 0) }], m.saturation)));
@@ -429,7 +452,7 @@
     const d = await api(`/api/anomalies?${qs()}`);
     root.append(h('h1', null, 'anomalies'));
     const g = h('div', { class: 'grid' }); root.appendChild(g);
-    g.appendChild(withSpan(card('distributed swarms (one client signature, many addresses, one hit each)', (d.swarms || []).length ? table([{ label: 'swarm', render: (r) => link('#/cluster/' + r.id, r.id) }, { label: 'ua', render: (r) => tag((r.summary || {}).ua_family || '') }, { label: 'sessions', render: (r) => num((r.summary || {}).sessions) }, { label: 'prefixes', render: (r) => num((r.summary || {}).prefixes) }, { label: 'one-hit share', render: (r) => pct((r.summary || {}).single_hit_share) }, { label: 'pages', render: (r) => num((r.summary || {}).pages) }, { label: 'first seen', render: (r) => fmtTs(r.window_start) }, { label: 'last seen', render: (r) => fmtTs(r.window_end) }], d.swarms) : h('p', { class: 'muted' }, 'none in range: no user-agent hash with 12+ sessions across 8+ prefixes, mostly one-hit, nothing rendered')), 'span12'));
+    g.appendChild(withSpan(card('distributed swarms (one client signature, many addresses, one hit each)', (d.swarms || []).length ? table([{ label: 'swarm', render: (r) => link('#/cluster/' + r.id, r.id) }, { label: 'grouped by', render: (r) => (r.summary || {}).by === 'stack' ? tag(`stack · ${(r.summary || {}).ua_strings} strings`, 'rose') : tag('ua string') }, { label: 'ua', render: (r) => tag((r.summary || {}).ua_family || '') }, { label: 'sessions', render: (r) => num((r.summary || {}).sessions) }, { label: 'prefixes', render: (r) => num((r.summary || {}).prefixes) }, { label: 'one-hit share', render: (r) => pct((r.summary || {}).single_hit_share) }, { label: 'pages', render: (r) => num((r.summary || {}).pages) }, { label: 'first seen', render: (r) => fmtTs(r.window_start) }, { label: 'last seen', render: (r) => fmtTs(r.window_end) }], d.swarms) : h('p', { class: 'muted' }, 'none in range: no user-agent hash with 12+ sessions across 8+ prefixes, mostly one-hit, nothing rendered')), 'span12'));
     g.appendChild(withSpan(card('malformed / unusual requests', table([{ label: 'when', render: (r) => fmtTs(r.ts) }, { label: 'session', render: (r) => sid(r.session_id) }, { label: 'method', key: 'method' }, { label: 'path', render: (r) => h('code', null, r.path.slice(0, 70)) }, { label: 'status', key: 'status', num: true }, { label: 'flags', render: (r) => JSON.parse(r.malformed).map((f) => tag(f, 'warn')) }], d.malformed)), 'span12'));
     g.appendChild(withSpan(card('rate limited sessions', table([{ label: 'session', render: (r) => sid(r.session_id) }, { label: '429s', key: 'n', num: true }, { label: 'ua', render: (r) => tag(r.ua_family || '') }], d.rate_limited)), 'span4'));
     g.appendChild(withSpan(card('heavy sessions (≥200 requests)', table([{ label: 'session', render: (r) => sid(r.session_id) }, { label: 'requests', key: 'n', num: true }, { label: 'ua', render: (r) => tag(r.ua_family || '') }], d.heavy_sessions)), 'span4'));
@@ -453,6 +476,9 @@
       { label: 'sessions', render: (r) => link('#/sessions?signature=' + encodeURIComponent(r.signature), String(r.sessions)) },
       { label: 'actors', key: 'actors', num: true }, { label: 'requests', key: 'requests', num: true }, { label: 'prefixes', key: 'prefixes', num: true }, { label: 'pages', key: 'pages', num: true },
       { label: 'families', render: (r) => r.families.map((f) => tag(f)) },
+      { label: 'http', render: (r) => (r.http_versions || []).map((v) => tag('http/' + v, 'lilac')) },
+      { label: 'tls, as the proxy saw it', render: (r) => (r.tls || []).length ? (r.tls || []).map((t) => h('code', { class: 'small' }, t + ' ')) : h('span', { class: 'muted' }, '—') },
+      { label: 'accept-encoding', render: (r) => (r.accept_encodings || []).map((e) => h('code', { class: 'small' }, e + ' ')) },
       { label: 'first', render: (r) => fmtTs(r.first_seen) }, { label: 'last', render: (r) => fmtTs(r.last_seen) },
       { label: 'headers, in wire order', render: (r) => h('code', { class: 'small' }, r.header_names.join(' → ')) },
       { label: 'user-agent strings (sessions)', render: (r) => h('ul', { class: 'evidence' }, r.ua_samples.map((u) => h('li', null, h('span', { class: 'w' }, String(u.sessions)), ' ', h('code', null, u.ua || '(none)')))) },
@@ -474,6 +500,46 @@
       g.appendChild(withSpan(card('pages × sessions, rows in the order the actor first reached them (a page lit in a later column is one it came back for)', heatTable(pages, sessionIds.map((id) => id.slice(0, 8)), cells, { corner: 'page \\ session' })), 'span12'));
     }
     g.appendChild(withSpan(card('canaries presented', d.sightings.length ? table([{ label: 'when', render: (r) => fmtTs(r.ts) }, { label: 'session', render: (r) => sid(r.session_id) }, { label: 'canary', render: (r) => h('code', null, r.canary_id) }, { label: 'in', key: 'seen_in' }, { label: 'shown where', render: (r) => r.carried_from ? [tag('carried across sessions', 'bad'), ' from ', sid(r.carried_from), ' ', tag(r.carried_placement, 'lilac'), ' ', h('span', { class: 'muted' }, fmtRel(r.carried_after_ms) + ' earlier')] : (r.cross_session ? tag('never shown to this actor: another actor, a cache, or an index', 'rose') : tag('same session', 'ok')) }], d.sightings) : h('p', { class: 'muted' }, 'this actor never presented a canary')), 'span12'));
+  };
+
+  views.handoffs = async (root) => {
+    const d = await api(`/api/handoffs?${qs()}`);
+    root.append(h('h1', null, 'hand-offs'), note('where did a visitor get a url it was never shown? a reach is explained when the actor itself, in any session, had already been served a page that links there or the channel that lists it. an unexplained reach whose linking page was served to a different actor shortly before is a hand-off between the two: one queue, many addresses. the entry page, everything one link from it and everything a machine channel lists are left out, anybody can know those.'));
+    const g = h('div', { class: 'grid' }); root.appendChild(g);
+    g.appendChild(withSpan(card('in range', kv({ 'reaches needing a source': d.considered, 'explained by the actor\'s own history': d.explained, 'handed over by another actor': d.handoffs, 'no visible source (an index, a cache, prior knowledge)': d.unsourced, 'share handed over': pct(d.share), 'median lag': d.median_lag_ms !== null ? fmtRel(d.median_lag_ms) : '—' })), 'span4'));
+    g.appendChild(withSpan(card('most handed-over pages', d.top_pages.length ? hbars(d.top_pages.map((p) => ({ label: p.page, value: p.n })), {}) : h('p', { class: 'muted' }, 'none')), 'span8'));
+    g.appendChild(withSpan(card('groups of actors that pass urls around (connected by hand-offs)', d.components.length ? table([
+      { label: 'actors', key: 'actor_count', num: true }, { label: 'hand-offs', key: 'edges', num: true }, { label: 'pages', key: 'pages', num: true }, { label: 'prefixes', key: 'prefixes', num: true },
+      { label: 'families', render: (r) => r.families.map((f) => tag(f)) },
+      { label: 'pools', render: (r) => r.swarms.map((s) => link('#/cluster/' + s, s)) },
+      { label: 'median lag', render: (r) => r.median_lag_ms !== null ? fmtRel(r.median_lag_ms) : '—' },
+      { label: 'first → last', render: (r) => r.first ? `${fmtTs(r.first)} → ${fmtTs(r.last)}` : '—' },
+      { label: 'members', render: (r) => r.actors.slice(0, 12).map((a) => [link('#/actor/' + encodeURIComponent(a.actor), a.actor.slice(0, 8)), h('span', { class: 'muted small' }, ` ${a.ua_family || 'none'} `)]) },
+    ], d.components) : h('p', { class: 'muted' }, 'no hand-offs in range')), 'span12'));
+    g.appendChild(withSpan(card('recent hand-offs', d.sample.length ? table([{ label: 'when', render: (r) => fmtTs(r.ts) }, { label: 'shown to', render: (r) => [sid(r.from_session), ' ', tag(r.from_family || 'none')] }, { label: 'fetched by', render: (r) => [sid(r.to_session), ' ', tag(r.to_family || 'none')] }, { label: 'page', render: (r) => pageLink(r.page) }, { label: 'linked from', render: (r) => pageLink(r.parent) }, { label: 'lag', render: (r) => fmtRel(r.lag_ms) }], d.sample) : h('p', { class: 'muted' }, 'none')), 'span12'));
+  };
+
+  views.llm = async (root) => {
+    const d = await api(`/api/llm?${qs()}`);
+    root.append(h('h1', null, 'llm traffic'), note('every self-declared model crawler and on-demand fetcher in range: what it reads, whether it comes as a pool, whether urls move between it and anyone else, and what the proxy saw of its handshake. the family is a claim in a string; everything else is behaviour.'));
+    if (!d.families.length) root.append(h('p', { class: 'muted' }, 'no self-declared ai crawler or fetcher in range'));
+    else root.appendChild(card('families', table([
+      { label: 'family', render: (r) => [tag(r.family, r.category === 'ai_fetcher' ? 'lilac' : 'rose'), h('span', { class: 'muted small' }, ' ' + r.category.replace('_', ' '))] },
+      { label: 'sessions', render: (r) => link(`#/sessions?family=${encodeURIComponent(r.family)}`, String(r.sessions)) }, { label: 'actors', key: 'actors', num: true }, { label: 'prefixes', key: 'prefixes', num: true }, { label: 'requests', key: 'requests', num: true },
+      { label: 'one-hit', render: (r) => pct(r.one_hit_share) }, { label: 'pages', key: 'pages', num: true }, { label: 'hidden', key: 'hidden_reaches', num: true },
+      { label: 'alternates', render: (r) => pct(r.alt_share) }, { label: 'llms.txt', key: 'llms_txt', num: true }, { label: 'manifests', key: 'manifests', num: true }, { label: 'robots', key: 'robots', num: true }, { label: 'disallowed', key: 'disallowed', num: true },
+      { label: 'cookie', render: (r) => pct(r.cookie_share) }, { label: 'h2', render: (r) => pct(r.h2_share) }, { label: 'conditional', render: (r) => pct(r.conditional_share) },
+      { label: 'stacks', render: (r) => r.stacks.map((s) => h('code', { class: 'small' }, (s.stack || 'none') + ' ')) },
+      { label: 'tls', render: (r) => r.tls.length ? r.tls.map((t) => h('code', { class: 'small' }, t.tls + ' ')) : h('span', { class: 'muted' }, '—') },
+      { label: 'classes', render: (r) => Object.entries(r.classes).map(([k, v]) => tag(`${k.replace(/_/g, ' ')} ${v}`)) },
+      { label: 'pools', render: (r) => r.pools.map((p) => link('#/cluster/' + p, p)) },
+      { label: 'hand-offs', render: (r) => r.handoffs.out || r.handoffs.in ? [tag(`out ${r.handoffs.out}`), tag(`in ${r.handoffs.in}`), ...r.handoffs.partners.map((p) => tag('with ' + p, 'lilac'))] : '' },
+      { label: 'canaries', render: (r) => r.canaries.presented ? `${r.canaries.presented} (${r.canaries.cross_actor} cross-actor)` : '' },
+      { label: 'top pages', render: (r) => r.top_pages.map((p) => [pageLink(p.page), ` ${p.sessions} `]) },
+      { label: 'first', render: (r) => fmtTs(r.first_seen) }, { label: 'last', render: (r) => fmtTs(r.last_seen) },
+    ], d.families)));
+    root.appendChild(card('pools that carry an ai family', d.pools.length ? table([{ label: 'pool', render: (r) => link('#/cluster/' + r.id, r.id) }, { label: 'label', key: 'label' }, { label: 'sessions', key: 'size', num: true }, { label: 'families', render: (r) => ((r.summary || {}).families || [(r.summary || {}).ua_family]).map((f) => tag(f || '')) }, { label: 'window', render: (r) => `${fmtTs(r.window_start)} → ${fmtTs(r.window_end)}` }], d.pools) : h('p', { class: 'muted' }, 'none in range')));
+    root.appendChild(h('p', { class: 'hint' }, `families the console knows as ai crawlers or fetchers: ${d.ai_families_known.join(', ')}`));
   };
 
   views.synthetic = async (root) => {

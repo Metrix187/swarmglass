@@ -117,7 +117,7 @@ export async function startApp(opts: StartOpts = {}): Promise<App> {
   });
 
   // ---- research console ----
-  const jobDeps: JobDeps = { cfg, db, log, telemetry, heuristics: () => heuristics, pageInfo: pageInfoFor(cat) };
+  const jobDeps: JobDeps = { cfg, db, log, telemetry, heuristics: () => heuristics, pageInfo: pageInfoFor(cat), cat, registry };
   const consoleRouter = buildConsoleRouter({ cfg, db, log, cat, telemetry, registry, heuristics: () => heuristics, reloadHeuristics, jobDeps, rootDir: ROOT });
   const consoleFallback = async (req: import('./http/server.ts').Req) => {
     const m = consoleRouter.match(req.method, req.path.slice(cfg.console.publicMount.length) || '/');

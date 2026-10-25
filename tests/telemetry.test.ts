@@ -8,6 +8,7 @@ import { loadHeuristics, score, evalCond, validateHeuristics } from '../src/tele
 import { computeFeatures, type EventRow, type SessionRow } from '../src/telemetry/features.ts';
 import { buildStory } from '../src/console/story.ts';
 import { detectSwarms, type SwarmSession } from '../src/telemetry/swarm.ts';
+import { findHandoffs, handoffComponents, type Discovery, type Fetch, type LinkGraph } from '../src/telemetry/handoff.ts';
 import { describeCluster, type ClusterSession } from '../src/telemetry/cluster.ts';
 import { familyCategory, uaFamily } from '../src/telemetry/ua.ts';
 import { assertNoLeak, sanitizeSession } from '../src/publish/sanitize.ts';
@@ -359,4 +360,105 @@ test('ua families: newer ai crawlers, fetchers and monitors are named', () => {
   assert.equal(uaFamily('Mozilla/5.0 (compatible; GoogleAgent-Mariner)').family, 'google-mariner');
   assert.equal(familyCategory('google-mariner'), 'ai_fetcher');
   assert.equal(uaFamily('Mozilla/5.0 (compatible; Kagibot/1.0)').family, 'kagi');
+});
+
+test('swarm detector: a pool that rotates its user-agent string is found by the http stack underneath', () => {
+  const masks: Array<[string, string, string]> = [
+    ['Mozilla/5.0 (iPhone; CPU iPhone OS 13_2_3 like Mac OS X) Safari/604.1', 'safari', 'ua-a'],
+    ['Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36', 'chrome', 'ua-b'],
+    ['Mozilla/5.0 (X11; Linux x86_64; rv:121.0) Gecko/20100101 Firefox/121.0', 'firefox', 'ua-c'],
+  ];
+  const mk = (i: number, extra: Partial<SwarmSession> = {}): SwarmSession => ({ id: 'm' + i, actor_hash: 'actor' + i, started_at: i * 600_000, last_seen_at: i * 600_000 + 100, ip_trunc: `198.${18 + (i % 20)}.${i}.0/24`, ua_hash: masks[i % 3]![2], ua_family: masks[i % 3]![1], ua: masks[i % 3]![0], stack_hash: 'stack-1', n_requests: 1, n_subresources: 0, n_conditional: 0, synthetic: false, pages: new Set(['P' + i]), ...extra });
+  const swarms = detectSwarms(Array.from({ length: 30 }, (_, i) => mk(i)));
+  assert.equal(swarms.length, 1, 'three strings on one stack, thirty prefixes, one hit each');
+  const s = swarms[0]!;
+  assert.equal(s.summary.by, 'stack');
+  assert.equal(s.summary.tier, 'strict');
+  assert.equal(s.summary.ua_strings, 3);
+  assert.deepEqual(s.summary.families, ['chrome', 'firefox', 'safari']);
+  assert.ok(s.label.startsWith('masked pool'), s.label);
+  assert.ok(s.signals.some((x) => x.signal === 'masks'));
+  assert.ok(s.signals.some((x) => x.signal === 'metronomic_pool'), 'ten minutes on the dot is a scheduler');
+  assert.equal(s.summary.cadence_ms, 600_000);
+  assert.equal(detectSwarms(Array.from({ length: 30 }, (_, i) => mk(i)))[0]!.id, s.id, 'stable id');
+  // the same thirty with one string are found by the string, once, under the id that pass has always used
+  const one = detectSwarms(Array.from({ length: 30 }, (_, i) => mk(i, { ua_hash: 'ua-a', ua_family: 'safari' })));
+  assert.equal(one.length, 1);
+  assert.equal(one[0]!.summary.by, 'ua');
+  assert.ok(!one[0]!.signals.some((x) => x.signal === 'masks'));
+  // thirty curl versions on one stack are thirty people with curl, not a pool: one generic family
+  const curl = detectSwarms(Array.from({ length: 30 }, (_, i) => mk(i, { ua_hash: 'curl-' + (i % 4), ua_family: 'curl' })));
+  assert.equal(curl.filter((x) => x.summary.by === 'stack').length, 0);
+  // three chrome strings on one stack are a mask: a browser does not change its version per request
+  const chrome = detectSwarms(Array.from({ length: 30 }, (_, i) => mk(i, { ua_hash: 'chrome-' + (i % 3), ua_family: 'chrome' })));
+  assert.equal(chrome.length, 1);
+  assert.equal(chrome[0]!.summary.by, 'stack');
+});
+
+test('swarm detector: a few requests per address is still a pool, scored lower; jittered starts carry no cadence', () => {
+  const mk = (i: number, extra: Partial<SwarmSession> = {}): SwarmSession => ({ id: 'l' + i, started_at: i * 600_000, last_seen_at: i * 600_000 + 4000, ip_trunc: `203.${i % 30}.${i}.0/24`, ua_hash: 'ua-l', ua_family: 'safari', ua: 'Mozilla/5.0 (iPhone)', stack_hash: 'stack-l', n_requests: 3, n_subresources: 0, n_conditional: 0, synthetic: false, pages: new Set(['P' + i, 'Q' + i, 'R' + i]), ...extra });
+  const loose = detectSwarms(Array.from({ length: 30 }, (_, i) => mk(i)));
+  assert.equal(loose.length, 1, 'three requests per address, thirty prefixes');
+  const l = loose[0]!;
+  assert.equal(l.summary.tier, 'loose');
+  assert.equal(l.summary.requests_per_session_median, 3);
+  assert.ok(l.signals.some((x) => x.signal === 'few_hits_per_address'));
+  assert.ok(l.label.includes('a few requests per address'), l.label);
+  const strict = detectSwarms(Array.from({ length: 30 }, (_, i) => mk(i, { n_requests: 1, pages: new Set(['P' + i]) })))[0]!;
+  assert.ok(strict.swarm_score >= l.swarm_score, `strict ${strict.swarm_score} loose ${l.swarm_score}`);
+  // five requests per address is a crawl of a few pages from many places, which the pairwise clusterer owns
+  assert.equal(detectSwarms(Array.from({ length: 30 }, (_, i) => mk(i, { n_requests: 5 }))).length, 0);
+  // gaps that cycle through four values none of which is within a quarter of another: the same thirty
+  // addresses, no beat
+  const cycle = [100_000, 300_000, 700_000, 1_300_000];
+  const starts: number[] = [];
+  for (let i = 0, t = 0; i < 30; i++) {
+    starts.push(t);
+    t += cycle[i % 4] as number;
+  }
+  const jitter = detectSwarms(Array.from({ length: 30 }, (_, i) => mk(i, { started_at: starts[i] as number, last_seen_at: (starts[i] as number) + 4000 })))[0]!;
+  assert.ok(!jitter.signals.some((x) => x.signal === 'metronomic_pool'), JSON.stringify(jitter.summary));
+  assert.ok((jitter.summary.cadence_share as number) < 0.5);
+});
+
+test('handoffs: a reach of a page the actor was never shown is credited to whoever was shown the link just before', () => {
+  const graph: LinkGraph = { parents: new Map([['X', ['A']], ['Y', ['B']]]), channels: new Map([['Z', ['channel:sitemap']]]), entry: new Set(['Main_Page', 'A']) };
+  const fetches: Array<Fetch & { page: string }> = [
+    { ts: 0, actor: 'one', session: 's1', page: 'A' },
+    { ts: 1000, actor: 'three', session: 's3', page: 'A' },
+    { ts: 2000, actor: 'three', session: 's3', page: 'X' },
+    { ts: 300_000, actor: 'two', session: 's2', page: 'X' },
+    { ts: 7000, actor: 'six', session: 's6', page: 'channel:sitemap' },
+    { ts: 8000, actor: 'six', session: 's6', page: 'Z' },
+    { ts: 9000, actor: 'seven', session: 's7', page: 'Z' },
+  ];
+  const discoveries: Discovery[] = [
+    { session: 's2', actor: 'two', page: 'X', ts: 300_000, via: 'direct' },
+    { session: 's3', actor: 'three', page: 'X', ts: 2000, via: 'sequence:A' },
+    { session: 's4', actor: 'four', page: 'Y', ts: 5000, via: 'direct' },
+    { session: 's5', actor: 'five', page: 'A', ts: 6000, via: 'direct' },
+    { session: 's6', actor: 'six', page: 'Z', ts: 8000, via: 'direct' },
+    { session: 's7', actor: 'seven', page: 'Z', ts: 9000, via: 'direct' },
+  ];
+  const r = findHandoffs(graph, discoveries, fetches);
+  assert.equal(r.considered, 5, 'A is an entry page and says nothing');
+  assert.equal(r.explained, 2, 'three had been served A itself, six had read the sitemap that lists Z');
+  assert.equal(r.handoffs.length, 2);
+  const z = r.handoffs.find((h) => h.page === 'Z')!;
+  assert.equal(z.from_actor, 'six', 'seven got Z from whoever read the sitemap');
+  assert.equal(z.parent, 'channel:sitemap');
+  const x = r.handoffs.find((h) => h.page === 'X')!;
+  assert.equal(x.from_actor, 'three', 'the latest actor shown the linking page');
+  assert.equal(x.to_actor, 'two');
+  assert.equal(x.lag_ms, 299_000);
+  assert.equal(r.unsourced, 1, 'nobody we saw had B');
+  assert.deepEqual(r.top_pages.map((p) => p.page).sort(), ['X', 'Z']);
+  const own = findHandoffs(graph, discoveries, fetches, { sources: new Set(['one']) });
+  assert.equal(own.handoffs.find((h) => h.page === 'X')!.from_actor, 'one', 'sources can be restricted to a pool\'s own members');
+  const tight = findHandoffs(graph, discoveries, fetches, { windowMs: 60_000 });
+  assert.equal(tight.handoffs.length, 1, 'only the sitemap hand-off is inside a minute');
+  assert.equal(tight.unsourced, 2);
+  const comps = handoffComponents(r.handoffs);
+  assert.equal(comps.length, 2);
+  assert.deepEqual([...comps[0]!.actors].sort(), ['seven', 'six']);
 });

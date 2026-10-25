@@ -258,6 +258,8 @@ export function buildConsoleRouter(deps: ConsoleDeps): Router {
   }), 'cluster');
   r.get('/api/history', (req) => requireAuth(req, (rq) => j(200, { days: q.dailyHistory(qd, Math.min(120, Math.max(1, Number(rq.query.get('days') ?? 30) || 30)), synth(rq)) })), 'history');
   r.get('/api/signatures', (req) => requireAuth(req, (rq) => j(200, { signatures: q.signatures(qd, range(rq), synth(rq)) })), 'signatures');
+  r.get('/api/handoffs', (req) => requireAuth(req, (rq) => j(200, q.handoffs(qd, range(rq), synth(rq)))), 'handoffs');
+  r.get('/api/llm', (req) => requireAuth(req, (rq) => j(200, q.llmTraffic(qd, range(rq), synth(rq)))), 'llm');
   r.get('/api/actors/:hash', (req) => requireAuth(req, (rq) => {
     const hash = rq.params.hash ?? '';
     if (!/^[a-f0-9]{8,64}$/.test(hash)) return j(400, { error: 'not an actor hash' });

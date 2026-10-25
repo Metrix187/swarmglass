@@ -19,7 +19,7 @@ Computed by `computeFeatures()` in `src/telemetry/features.ts` from the session'
 | `alt_share` | alternate representations as a share of all requests |
 | `asset_share` | stylesheet/script/favicon share |
 | `n_head`, `n_post` | methods |
-| `n_errors`, `error_rate`, `n_429`, `n_malformed` | |
+| `n_errors`, `error_rate`, `n_429`, `n_malformed`, `malformed_share` | `malformed_share` is the share of requests carrying any malformation flag; an injection scanner flags most of its own requests, a crawler that hits one odd url does not |
 | `n_disallowed` | successful fetches of robots-disallowed paths |
 | `fetched_robots`, `robots_first`, `disallowed_after_robots` | robots.txt handling |
 | `machine_first` | one of the first three requests was a machine channel |
@@ -66,6 +66,8 @@ Computed by `computeFeatures()` in `src/telemetry/features.ts` from the session'
 | `ua_category` | the family's category: `browser`, `search`, `ai_crawler` (corpus builders), `ai_fetcher` (the `*-User` on-demand agents), `seo`, `library`, `headless`, `social`, `monitor`, `synthetic`, `other` |
 | `cookie_returned`, `cookie_present_share` | |
 | `header_order_variants`, `mean_header_count` | distinct wire orders of header names |
+| `stack_variants` | distinct client-stack signatures (`events.stack_hash`) in the session; one for a real client, more when a stack rotates or two clients share a session key |
+| `tls_variants`, `tls` | distinct handshakes the proxy forwarded, and the first one (`tls1.3 TLS_AES_128_GCM_SHA256 h2`); empty when the proxy does not forward them |
 | `has_sec_fetch`, `has_client_hints`, `has_accept_language` | browser fetch-metadata presence |
 | `pragma_share` | share of requests carrying a `Pragma` header; browsers send it only on a hard reload, scrapers on every request |
 | `http2_share` | |
