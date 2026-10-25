@@ -592,6 +592,7 @@
       await view(frag, params, arg ? decodeURIComponent(arg) : undefined);
       root.replaceChildren(...frag.childNodes);
     } catch (e) {
+      console.error('view failed', e);
       root.replaceChildren(h('p', { class: 'error' }, 'failed to load: ' + (e && e.message ? e.message : String(e))));
     }
   }

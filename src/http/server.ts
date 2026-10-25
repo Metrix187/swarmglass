@@ -185,8 +185,8 @@ export function readBody(req: IncomingMessage, max: number): Promise<{ body: Buf
       if (size > max) {
         truncated = true;
         chunks.push(c.subarray(0, Math.max(0, max - (size - c.length))));
-        // stop reading; node will drain/close on our response
-        req.pause();
+        // answer now, keep swallowing what is left: a paused body never completes, and thirty seconds later node
+        // raises a request timeout on a socket the client may be reusing. the connection is closed after the answer
         resolve({ body: Buffer.concat(chunks), truncated });
         return;
       }
@@ -302,6 +302,19 @@ export function redirect(status: number, location: string, headers: Record<strin
   };
 }
 
+const CLIENT_ERROR_TEXT: Record<number, string> = { 400: 'Bad Request', 408: 'Request Timeout', 431: 'Request Header Fields Too Large' };
+
+/** what node's own clientError handling would say, so that browsers keep their retry behaviour */
+export function clientErrorReply(code: string, sock: { bytesRead: number; writable: boolean; destroyed: boolean; responseStarted: boolean }): { status: number; line: string | null } {
+  const status = code === 'ERR_HTTP_REQUEST_TIMEOUT' ? 408 : code === 'HPE_HEADER_OVERFLOW' || code === 'HPE_CHUNK_EXTENSIONS_OVERFLOW' ? 431 : 400;
+  // nothing to answer when nothing was asked: a connection a browser opened ahead of time and never used (chromium
+  // keeps spares) times out like any other, and a reset before the first response byte is what makes a browser
+  // retry on a fresh connection, where a status line is shown to the user as a failed request. a response already
+  // on the wire is never interrupted: a status line in the middle of a body corrupts it
+  const quiet = sock.bytesRead === 0 || !sock.writable || sock.destroyed || sock.responseStarted;
+  return { status, line: quiet ? null : `HTTP/1.1 ${status} ${CLIENT_ERROR_TEXT[status] ?? 'Bad Request'}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n` };
+}
+
 export function createHttpServer(router: Router, opts: ServerOptions & { isTrusted: (ip: string) => boolean }): Server {
   const server = createServer({ maxHeaderSize: 32 * 1024, requestTimeout: 30_000, headersTimeout: 15_000, keepAliveTimeout: 5_000 }, (incoming, outgoing) => {
     void handle(incoming, outgoing);
@@ -349,6 +362,8 @@ export function createHttpServer(router: Router, opts: ServerOptions & { isTrust
     // middleware (session cookie etc) leaves headers here; handler headers win on conflict
     const extra = req.state.extraHeaders as Record<string, string> | undefined;
     if (extra) res.headers = { ...extra, ...res.headers };
+    // a body we stopped reading is still arriving: let node close the connection once the answer is out
+    if (req.bodyTruncated) res.headers = { ...res.headers, connection: 'close' };
 
     send(outgoing, res, req.method, opts);
     const latencyMs = Number(process.hrtime.bigint() - started) / 1e6;
@@ -361,9 +376,18 @@ export function createHttpServer(router: Router, opts: ServerOptions & { isTrust
     }
   }
 
-  // node rejects malformed requests before we see them; still worth counting
+  // node rejects malformed requests before we see them; still worth counting. the answer follows node's own rules
+  // (lib/_http_server.js socketOnError): 408 for a request that stalled, which a browser quietly retries on a fresh
+  // connection where a 400 is shown to the user; 431 for oversized headers; 400 for the rest; and nothing at all when
+  // a response is already on the wire, since a status line pushed into the middle of someone's body corrupts it.
+  // the stalled case is also the one a keep-alive client runs into: a request body nobody drained times out thirty
+  // seconds later, by which time the browser may have put its next request on the same socket
   server.on('clientError', (err: Error & { code?: string }, socket: Socket) => {
-    opts.log.debug('client error', { code: err.code, remote: socket.remoteAddress });
+    const code = err.code ?? 'unknown';
+    const sock = socket as Socket & { _httpMessage?: { _headerSent?: boolean } | null; parser?: { incoming?: IncomingMessage | null } | null };
+    const inc = sock.parser?.incoming ?? null;
+    const { status, line } = clientErrorReply(code, { bytesRead: socket.bytesRead, writable: socket.writable, destroyed: socket.destroyed, responseStarted: Boolean(sock._httpMessage && sock._httpMessage._headerSent) });
+    opts.log.debug('client error', { code, status, remote: socket.remoteAddress, port: socket.remotePort, bytes_read: socket.bytesRead, bytes_written: socket.bytesWritten, method: inc?.method, url: inc?.url, complete: inc?.complete, response_in_flight: Boolean(sock._httpMessage) });
     if (opts.onResponse) {
       try {
         const fake: Req = {
@@ -388,14 +412,13 @@ export function createHttpServer(router: Router, opts: ServerOptions & { isTrust
           params: {},
           state: { clientError: err.code ?? 'unknown' },
         };
-        opts.onResponse(fake, { status: 400, headers: {}, body: '', meta: { route: 'client_error', malformed: ['parse_error:' + (err.code ?? 'unknown')] } }, 0);
+        opts.onResponse(fake, { status, headers: {}, body: '', meta: { route: 'client_error', malformed: ['parse_error:' + code] } }, 0);
       } catch {
         // never let telemetry break the socket path
       }
     }
-    if (socket.writable && !socket.destroyed) {
-      socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
-    }
+    if (line === null) socket.destroy();
+    else socket.end(line);
   });
 
   return server;

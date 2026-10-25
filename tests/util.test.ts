@@ -4,7 +4,7 @@ import { truncateIp, cidrContains, inAnyCidr } from '../src/util/ip.ts';
 import { negotiate, acceptProfile } from '../src/http/negotiate.ts';
 import { entropy, jaccard, ngrams, scrub } from '../src/util/text.ts';
 import { fnv1a, seededRandom, safeEqual } from '../src/util/hash.ts';
-import { normalizePath, resolveClientIp } from '../src/http/server.ts';
+import { clientErrorReply, normalizePath, resolveClientIp } from '../src/http/server.ts';
 import { malformationFlags } from '../src/http/security.ts';
 import { fmtDuration } from '../src/util/time.ts';
 
@@ -95,4 +95,20 @@ test('fmtDuration carries seconds into minutes instead of printing 3m 60s', () =
   assert.equal(fmtDuration(59_990), '1m 0s');
   assert.equal(fmtDuration(3_599_600), '1h 0m');
   assert.equal(fmtDuration(2_500), '2.5s');
+});
+
+test('client errors are answered the way node would, and never on a socket nobody spoke on', () => {
+  const live = { bytesRead: 120, writable: true, destroyed: false, responseStarted: false };
+  // a request that stalled is a 408: browsers retry those on a fresh connection, a 400 they show to the user
+  assert.equal(clientErrorReply('ERR_HTTP_REQUEST_TIMEOUT', live).status, 408);
+  assert.match(clientErrorReply('ERR_HTTP_REQUEST_TIMEOUT', live).line ?? '', /^HTTP\/1\.1 408 Request Timeout\r\nConnection: close\r\nContent-Length: 0\r\n\r\n$/);
+  assert.equal(clientErrorReply('HPE_HEADER_OVERFLOW', live).status, 431);
+  assert.equal(clientErrorReply('HPE_INVALID_METHOD', live).status, 400);
+  assert.equal(clientErrorReply('unknown', live).status, 400);
+  // a connection the browser opened ahead of time and never used: nothing to answer, just close it
+  assert.equal(clientErrorReply('ERR_HTTP_REQUEST_TIMEOUT', { ...live, bytesRead: 0 }).line, null);
+  // a response already on the wire is never interrupted
+  assert.equal(clientErrorReply('HPE_INVALID_CONSTANT', { ...live, responseStarted: true }).line, null);
+  assert.equal(clientErrorReply('HPE_INVALID_CONSTANT', { ...live, writable: false }).line, null);
+  assert.equal(clientErrorReply('HPE_INVALID_CONSTANT', { ...live, destroyed: true }).line, null);
 });

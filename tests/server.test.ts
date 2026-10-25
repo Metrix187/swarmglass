@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { connect } from 'node:net';
 import { startApp, type App } from '../src/app.ts';
 import { testConfig } from '../src/config.ts';
 import { scoreSessions, runClustering, rollupDaily } from '../src/telemetry/jobs.ts';
@@ -658,4 +659,33 @@ test('console: the llm and hand-off views answer, and a declared fetcher lands i
   const ho = await (await fetch(consoleBase + '/api/handoffs?range=24h&synthetic=all', { headers: { cookie } })).json() as { considered: number; explained: number; handoffs: number; unsourced: number; components: unknown[]; sample: unknown[]; top_pages: unknown[] };
   assert.ok(typeof ho.considered === 'number' && ho.handoffs >= 0 && Array.isArray(ho.components) && Array.isArray(ho.sample) && Array.isArray(ho.top_pages));
   assert.equal(ho.considered, ho.explained + ho.handoffs + ho.unsourced, 'every reach that needed a source is accounted for');
+});
+
+test('an oversized body is answered at once and the connection closed, instead of stalling until node times it out', async () => {
+  // readBody used to pause the request once the cap was hit. a paused body never completes, thirty seconds later node
+  // raised a request timeout on the socket, and the old handler wrote a 400 onto whatever the client had put on that
+  // keep-alive connection since. the server now swallows the rest, answers, and closes
+  const url = new URL(base);
+  const body = Buffer.alloc(300_000, 0x78);
+  const sock = connect(Number(url.port), url.hostname);
+  await new Promise<void>((resolve, reject) => { sock.once('connect', () => resolve()); sock.once('error', reject); });
+  const chunks: Buffer[] = [];
+  sock.on('data', (c: Buffer) => chunks.push(c));
+  const closed = new Promise<void>((resolve) => sock.once('close', () => resolve()));
+  sock.write(`POST /robots.txt HTTP/1.1\r\nHost: ${url.host}\r\nUser-Agent: probe/body\r\nContent-Type: text/plain\r\nContent-Length: ${body.length}\r\n\r\n`);
+  sock.write(body);
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    await Promise.race([closed, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('the server kept the connection open')), 8000); })]);
+  } finally {
+    clearTimeout(timer);
+    sock.destroy();
+  }
+  const head = Buffer.concat(chunks).toString('latin1').split('\r\n\r\n')[0] ?? '';
+  assert.match(head, /^HTTP\/1\.1 405 /, 'the oversized post is still answered like any other post to that path');
+  assert.match(head.toLowerCase(), /\r\nconnection: close\r\n/, 'and the connection is closed behind the answer');
+  flush();
+  const ev = app.db.get<{ malformed: string | null; status: number }>("SELECT status, malformed FROM events WHERE path = '/robots.txt' AND method = 'POST' ORDER BY ts DESC LIMIT 1");
+  assert.equal(ev?.status, 405);
+  assert.ok((ev?.malformed ?? '').includes('body_truncated'), 'the cut-off body is recorded as a malformation flag');
 });

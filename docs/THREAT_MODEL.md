@@ -34,11 +34,11 @@ A honeypot advertises itself to the parts of the internet that are looking for t
 
 | threat | control |
 |---|---|
-| request smuggling / oversized headers | Node's parser rejects; 32 KB header cap; 15 s header timeout; `clientError` recorded as a malformed event |
+| request smuggling / oversized headers / stalled requests | Node's parser rejects; 32 KB header cap; 15 s header timeout, 30 s request timeout; `clientError` recorded as a malformed event and answered as node itself would (408 / 431 / 400, nothing on a connection that never spoke, nothing while a response is on the wire) |
 | path traversal | normalized paths; assets resolved against the assets dir and checked to stay inside it; no filesystem reads from request paths anywhere else |
 | template/expression injection | no template engine; the renderer only ever renders the trusted seed; every request-derived string is escaped or rejected |
 | SSRF / visitor-controlled fetches | there is no fetch in the public code path; nothing takes a URL from a request |
-| body bombs | bodies capped at `SWARMGLASS_MAX_BODY_BYTES` (64 KB), read only for POST/PUT/PATCH, never stored |
+| body bombs | bodies capped at `SWARMGLASS_MAX_BODY_BYTES` (64 KB), read only for POST/PUT/PATCH, never stored; what arrives past the cap is swallowed, answered at once and the connection closed, so a slow upload cannot park a half-read request on a keep-alive socket |
 | log injection | control characters scrubbed from every stored string; bounded lengths |
 | rate abuse | token bucket per truncated address (30 rps, burst 120 default) → 429 with `Retry-After`; global limits at the proxy |
 | disk exhaustion | writer queue bound (20 k), disk guard (degrade at 90%, purge at 100%), log rotation, `mem_limit` |
