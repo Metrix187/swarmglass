@@ -33,6 +33,7 @@ export interface EventRow {
   malformed: string | null;
   http_version: string | null;
   extra_json: string | null;
+  stack_hash?: string | null;
 }
 
 export interface SessionRow {
@@ -103,6 +104,9 @@ export function computeFeatures(session: SessionRow, events: EventRow[], pageInf
   f.error_rate = n ? (f.n_errors as number) / n : 0;
   f.n_429 = ev.filter((e) => e.status === 429).length;
   f.n_malformed = ev.filter((e) => e.malformed).length;
+  // the share matters more than the count: an injection scanner flags most of its own requests, a crawler that
+  // hits one odd url does not
+  f.malformed_share = n ? (f.n_malformed as number) / n : 0;
   f.n_disallowed = ev.filter((e) => e.robots_disallowed && e.status < 400).length;
   f.robots_first = n > 0 && (ev[0] as EventRow).resource_kind === 'robots';
   const robotsIdx = kinds.indexOf('robots');
@@ -195,6 +199,17 @@ export function computeFeatures(session: SessionRow, events: EventRow[], pageInf
   // ---- headers / negotiation ----
   const orderHashes = new Set(ev.map((e) => e.header_order_hash).filter(Boolean));
   f.header_order_variants = orderHashes.size;
+  // the stack's own signature (names minus cookie, referer and the proxy's additions): one per real client.
+  // several in one session is a stack rotating, or two clients behind one session key
+  f.stack_variants = new Set(ev.map((e) => e.stack_hash).filter((x): x is string => Boolean(x))).size;
+  // what the client negotiated with the proxy, when the proxy forwards it (deploy/: X-Swarmglass-TLS)
+  const tls = new Set<string>();
+  for (const e of ev) {
+    const t = tlsOf(e);
+    if (t) tls.add(t);
+  }
+  f.tls_variants = tls.size;
+  f.tls = [...tls][0] ?? '';
   f.mean_header_count = mean(ev.map((e) => e.header_count ?? 0));
   const names = ev.map((e) => e.header_names ?? '').join(',');
   f.has_sec_fetch = /sec-fetch-/.test(names);
@@ -308,6 +323,16 @@ export function computeFeatures(session: SessionRow, events: EventRow[], pageInf
   const firstKinds = kinds.slice(0, 3);
   f.machine_first = firstKinds.some((k) => k in CHANNEL_KINDS);
   return f;
+}
+
+export function tlsOf(e: Pick<EventRow, 'extra_json'>): string | null {
+  if (!e.extra_json || !e.extra_json.includes('"tls"')) return null;
+  try {
+    const x = JSON.parse(e.extra_json) as { tls?: unknown };
+    return typeof x.tls === 'string' && x.tls ? x.tls : null;
+  } catch {
+    return null;
+  }
 }
 
 export function hasConditional(e: Pick<EventRow, 'header_names'>): boolean {

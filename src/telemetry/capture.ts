@@ -15,6 +15,46 @@ import { sessionLoader } from './hydrate.ts';
 import { CanaryService, type Canary, type Sighting } from './canary.ts';
 import { LiveBus } from './bus.ts';
 import { RateLimiter } from '../http/security.ts';
+import { inAnyCidr } from '../util/ip.ts';
+
+// header names a proxy adds, a browser adds per request, or a body brings along; everything else is the client
+// stack's own habit and the same on every request it ever makes, whatever user-agent string it wears
+const STACK_SKIP = new Set([
+  'cookie', 'referer', 'if-none-match', 'if-modified-since', 'origin', 'content-length', 'content-type',
+  'via', 'forwarded', 'x-forwarded-for', 'x-forwarded-host', 'x-forwarded-proto', 'x-forwarded-port', 'x-real-ip',
+  'cf-connecting-ip', 'cf-ray', 'cf-ipcountry', 'cf-visitor', 'cdn-loop', 'x-swarmglass-proto', 'x-swarmglass-tls', 'x-swarmglass-synthetic',
+]);
+
+export function stackSignature(names: string[]): string {
+  return shortHash(names.filter((n) => !STACK_SKIP.has(n)).join(','), 12);
+}
+
+// the proxy terminates tls and talks http/1.1 to the app, so node's httpVersion is the proxy's and nothing of
+// the handshake survives. caddy and nginx forward what the client really negotiated in two headers (see
+// deploy/); honoured from trusted peers only, a visitor's own copy is ignored like any other forwarded header
+export function forwardedTransport(headers: Record<string, string>, trusted: boolean): { version: string | null; tls: string | null } {
+  if (!trusted) return { version: null, tls: null };
+  const m = (headers['x-swarmglass-proto'] ?? '').trim().match(/^HTTP\/(\d(?:\.\d)?)$/i);
+  const version = m ? ((m[1] as string).includes('.') ? (m[1] as string) : `${m[1]}.0`) : null;
+  const t = scrub((headers['x-swarmglass-tls'] ?? '').trim(), 96).replace(/\s+/g, ' ');
+  return { version, tls: t && t !== '-' ? t : null };
+}
+
+// old rows get the signature too; runs once at boot, in batches, and is a no-op afterwards
+export function backfillStackHashes(db: Db, log: Logger): number {
+  let n = 0;
+  for (;;) {
+    const rows = db.all<{ id: number; header_names: string | null }>('SELECT id, header_names FROM events WHERE stack_hash IS NULL ORDER BY id LIMIT 2000');
+    if (!rows.length) break;
+    db.transaction(() => {
+      for (const r of rows) db.run('UPDATE events SET stack_hash = ? WHERE id = ?', stackSignature((r.header_names ?? '').split(',').filter(Boolean)), r.id);
+    });
+    n += rows.length;
+    if (n >= 2_000_000) break;
+  }
+  if (n) log.info('backfilled stack signatures', { rows: n });
+  return n;
+}
 
 export interface ResMeta {
   route?: string;
@@ -223,6 +263,7 @@ export class Telemetry {
     if (sessionSnapshot) s.persisted = true;
     const sanitizedQuery = sanitizeQuery(req.query, this.cfg);
     const hasQuery = Boolean(sanitizedQuery && Object.keys(sanitizedQuery).length);
+    const transport = forwardedTransport(req.headers, this.cfg.trustProxy && inAnyCidr(this.cfg.trustedProxies, req.remoteIp));
     const row = {
       ts: at,
       session_id: s.id,
@@ -237,7 +278,7 @@ export class Telemetry {
       status: res.status,
       latency_ms: Math.round(latencyMs * 100) / 100,
       bytes_out: req.method === 'HEAD' ? 0 : bodyBytes(res),
-      http_version: req.httpVersion || null,
+      http_version: transport.version ?? (req.httpVersion || null),
       proto: req.proto,
       host: scrub(req.host, 253) || null,
       ua_hash: s.uaHash,
@@ -249,6 +290,7 @@ export class Telemetry {
       query_json: hasQuery ? JSON.stringify(sanitizedQuery) : null,
       header_names: req.rawHeaderNames.slice(0, 64).join(','),
       header_order_hash: shortHash(req.rawHeaderNames.join(','), 12),
+      stack_hash: stackSignature(req.rawHeaderNames),
       header_count: req.headerCount,
       cookie_present: Boolean(req.state.cookiePresent),
       cookie_valid: Boolean(req.state.cookieValid),
@@ -265,6 +307,7 @@ export class Telemetry {
       extra_json: (() => {
         const extra: Record<string, unknown> = extraHeaderFields(req.headers, this.cfg);
         extra.accept_profile = acceptProfile(req.headers['accept']);
+        if (transport.tls) extra.tls = transport.tls;
         if (req.state.clientError) extra.client_error = req.state.clientError;
         if (synthetic) extra.synthetic_persona = synthetic.persona;
         return JSON.stringify(extra);
@@ -296,9 +339,9 @@ export class Telemetry {
       }
       if (!this.writer.degraded) {
         this.db.run(
-          `INSERT INTO events (ts, session_id, actor_hash, method, path, route_id, page_id, resource_kind, discover_class, depth, status, latency_ms, bytes_out, http_version, proto, host, ua_hash, accept, accept_lang, accept_enc, referer, referer_internal, query_json, header_names, header_order_hash, header_count, cookie_present, cookie_valid, negotiated, robots_disallowed, canaries_exposed, canaries_seen, cohorts_json, synthetic, synthetic_run, malformed, body_bytes, body_ctype, extra_json)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          row.ts, row.session_id, row.actor_hash, row.method, row.path, row.route_id, row.page_id, row.resource_kind, row.discover_class, row.depth, row.status, row.latency_ms, row.bytes_out, row.http_version, row.proto, row.host, row.ua_hash, row.accept, row.accept_lang, row.accept_enc, row.referer, row.referer_internal, row.query_json, row.header_names, row.header_order_hash, row.header_count, row.cookie_present, row.cookie_valid, row.negotiated, row.robots_disallowed, row.canaries_exposed, row.canaries_seen, row.cohorts_json, row.synthetic, row.synthetic_run, row.malformed, row.body_bytes, row.body_ctype, row.extra_json,
+          `INSERT INTO events (ts, session_id, actor_hash, method, path, route_id, page_id, resource_kind, discover_class, depth, status, latency_ms, bytes_out, http_version, proto, host, ua_hash, accept, accept_lang, accept_enc, referer, referer_internal, query_json, header_names, header_order_hash, header_count, cookie_present, cookie_valid, negotiated, robots_disallowed, canaries_exposed, canaries_seen, cohorts_json, synthetic, synthetic_run, malformed, body_bytes, body_ctype, extra_json, stack_hash)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          row.ts, row.session_id, row.actor_hash, row.method, row.path, row.route_id, row.page_id, row.resource_kind, row.discover_class, row.depth, row.status, row.latency_ms, row.bytes_out, row.http_version, row.proto, row.host, row.ua_hash, row.accept, row.accept_lang, row.accept_enc, row.referer, row.referer_internal, row.query_json, row.header_names, row.header_order_hash, row.header_count, row.cookie_present, row.cookie_valid, row.negotiated, row.robots_disallowed, row.canaries_exposed, row.canaries_seen, row.cohorts_json, row.synthetic, row.synthetic_run, row.malformed, row.body_bytes, row.body_ctype, row.extra_json, row.stack_hash,
         );
       }
       for (const c of newExposures) {

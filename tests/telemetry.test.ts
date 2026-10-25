@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { CanaryService, CANARY_RE } from '../src/telemetry/canary.ts';
+import { forwardedTransport, stackSignature } from '../src/telemetry/capture.ts';
 import { ipFields, sanitizeQuery, refererFields } from '../src/telemetry/privacy.ts';
 import { testConfig } from '../src/config.ts';
 import { loadHeuristics, score, evalCond, validateHeuristics } from '../src/telemetry/scoring.ts';
@@ -313,4 +314,49 @@ test('features + story: a 304 is a revalidation, not a redirect', () => {
   assert.ok(story.steps[1]!.flags.includes('conditional'));
   assert.ok(story.steps[1]!.notes.some((n) => n.includes('answered 304')), story.steps[1]!.notes.join(' | '));
   assert.ok(story.steps[2]!.notes.some((n) => n.includes('had a copy already')));
+});
+
+test('stack signature ignores what the proxy and the request add; forwarded transport is honoured from trusted peers only', () => {
+  const base = ['host', 'user-agent', 'accept', 'accept-encoding', 'accept-language'];
+  const a = stackSignature(base);
+  assert.equal(stackSignature([...base.slice(0, 3), 'cookie', ...base.slice(3), 'referer', 'via', 'x-forwarded-for', 'x-forwarded-host', 'x-forwarded-proto', 'x-real-ip']), a, 'cookie, referer and the proxy tail do not change the stack');
+  assert.notEqual(stackSignature(['host', 'accept', 'user-agent', 'accept-encoding', 'accept-language']), a, 'the order of the stack\'s own headers does');
+  assert.deepEqual(forwardedTransport({ 'x-swarmglass-proto': 'HTTP/2.0', 'x-swarmglass-tls': 'tls1.3 TLS_AES_128_GCM_SHA256 h2' }, false), { version: null, tls: null }, 'an untrusted peer\'s copy is ignored');
+  assert.deepEqual(forwardedTransport({ 'x-swarmglass-proto': 'HTTP/2.0', 'x-swarmglass-tls': 'tls1.3  TLS_AES_128_GCM_SHA256 h2' }, true), { version: '2.0', tls: 'tls1.3 TLS_AES_128_GCM_SHA256 h2' });
+  assert.deepEqual(forwardedTransport({ 'x-swarmglass-proto': 'HTTP/3', 'x-swarmglass-tls': '  ' }, true), { version: '3.0', tls: null }, 'a plain http request has no handshake to forward');
+  assert.deepEqual(forwardedTransport({ 'x-swarmglass-proto': 'nope' }, true), { version: null, tls: null });
+});
+
+test('features + heuristics v5: an injection scanner wearing a browser string is not a person', () => {
+  const h = loadHeuristics(join(process.cwd(), 'config', 'heuristics.json'));
+  validateHeuristics(h);
+  // modelled on the sqlmap-shaped sessions of 2026-10-21: one page, ?action= and ?section= payloads, half of them
+  // answered 400, cookie returned, no assets, two minutes, a residential prefix and a browser string
+  const events: EventRow[] = [];
+  for (let i = 0; i < 80; i++) {
+    const probe = i % 2 === 1;
+    events.push(ev({ ts: i * 1500, page_id: 'About', path: '/wiki/About', resource_kind: probe ? 'other' : 'special', status: probe ? 400 : 200, query_json: JSON.stringify(probe ? { action: "1' AND 1=1 UNION SELECT NULL-- -" } : { action: 'edit', section: '1' }), malformed: probe ? JSON.stringify(['probe_pattern']) : null, cookie_present: i ? 1 : 0, cookie_valid: i ? 1 : 0, header_names: 'host,user-agent,accept,accept-encoding,accept-language' }));
+  }
+  const f = computeFeatures({ ...session, ua: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36', ua_family: 'chrome', cookie_returned: 1 }, events, pageInfo);
+  assert.ok((f.malformed_share as number) >= 0.4, `share ${f.malformed_share}`);
+  const s = score(h, f);
+  assert.notEqual(s.likely_class, 'human_browser', JSON.stringify(s.classes));
+  assert.ok(s.class_evidence.scripted_agent!.some((e) => e.rule === 'injection'));
+  assert.ok(s.class_evidence.human_browser!.some((e) => e.rule === 'injection'));
+  assert.ok(s.traits.automation_likelihood!.value > 0.6, `automation ${s.traits.automation_likelihood!.value}`);
+  // one odd url in an otherwise ordinary read does not make a scanner
+  const quiet = computeFeatures({ ...session, ua_family: 'chrome', cookie_returned: 1 }, events.slice(0, 2).concat(events.filter((_, i) => i % 2 === 0).slice(1, 20)), pageInfo);
+  assert.ok(!score(h, quiet).class_evidence.scripted_agent!.some((e) => e.rule === 'injection'));
+});
+
+test('ua families: newer ai crawlers, fetchers and monitors are named', () => {
+  assert.equal(uaFamily('Gatus/1.0').family, 'uptime-monitor');
+  assert.equal(familyCategory('uptime-monitor'), 'monitor');
+  assert.equal(uaFamily('Mozilla/5.0 (compatible; Applebot-Extended/0.1; +http://www.apple.com/go/applebot)').family, 'applebot-extended');
+  assert.equal(uaFamily('Mozilla/5.0 (compatible; Applebot/0.1; +http://www.apple.com/go/applebot)').family, 'applebot');
+  assert.equal(uaFamily('Mozilla/5.0 (compatible) AI2Bot (+https://www.allenai.org/crawler)').family, 'ai2bot');
+  assert.equal(familyCategory('ai2bot'), 'ai_crawler');
+  assert.equal(uaFamily('Mozilla/5.0 (compatible; GoogleAgent-Mariner)').family, 'google-mariner');
+  assert.equal(familyCategory('google-mariner'), 'ai_fetcher');
+  assert.equal(uaFamily('Mozilla/5.0 (compatible; Kagibot/1.0)').family, 'kagi');
 });

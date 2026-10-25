@@ -64,7 +64,7 @@ export const HEADER_DENYLIST = new Set(['authorization', 'proxy-authorization', 
 export function extraHeaderFields(headers: Record<string, string>, cfg: Config): Record<string, string> {
   const out: Record<string, string> = {};
   if (cfg.privacy.headerCapture === 'names_only') return out;
-  for (const name of ['from', 'dnt', 'upgrade-insecure-requests', 'x-requested-with', 'sec-fetch-dest', 'sec-fetch-mode', 'sec-fetch-site', 'sec-fetch-user', 'sec-ch-ua', 'sec-ch-ua-mobile', 'sec-ch-ua-platform', 'purpose', 'x-purpose', 'sec-purpose', 'cache-control', 'pragma', 'range', 'if-modified-since', 'if-none-match']) {
+  for (const name of ['from', 'dnt', 'upgrade-insecure-requests', 'x-requested-with', 'sec-fetch-dest', 'sec-fetch-mode', 'sec-fetch-site', 'sec-fetch-user', 'sec-ch-ua', 'sec-ch-ua-mobile', 'sec-ch-ua-platform', 'purpose', 'x-purpose', 'sec-purpose', 'cache-control', 'pragma', 'range', 'if-modified-since', 'if-none-match', 'connection', 'te']) {
     const v = headers[name];
     if (v !== undefined) out[name] = scrub(v, 256);
   }

@@ -19,6 +19,9 @@ quantara.cv {
 			header_up X-Real-IP {remote_host}
 			# not behind cloudflare: a visitor's own CF-Connecting-IP must not reach the app
 			header_up -CF-Connecting-IP
+			# the client's real protocol and handshake, see Caddyfile.optionA
+			header_up X-Swarmglass-Proto {http.request.proto}
+			header_up X-Swarmglass-TLS "{http.request.tls.version} {http.request.tls.cipher_suite} {http.request.tls.proto}"
 		}
 	}
 

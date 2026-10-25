@@ -1,6 +1,6 @@
 {
-  "version": 4,
-  "updated": "2026-09-06",
+  "version": 5,
+  "updated": "2026-10-24",
   "notes": [
     "These are research heuristics, not ground truth. Every score is a weighted sum of plain rules over per-session features (see docs/DATA_DICTIONARY.md).",
     "Rules are deliberately legible. Edit weights, re-run `npm run rescore`, and the console shows which rules fired for each session.",
@@ -9,7 +9,8 @@
     "v1 tightening after F-000: scripted 'targeted' requires n_alt < 2; retrieval gains 'alternates_many' (n_alt >= 5 and alt_share >= 0.3).",
     "v2 after the first evening of real traffic (2026-09-06): a self-declared GPTBot crawl scored human. Browser evidence now needs proportion (asset_share), dwell needs irregular gaps, metronomic pacing and long asset-free reads count against human, and self-declared crawler/fetcher/previewer/monitor/headless UAs count against human the way library UAs already did. Retrieval loses 'alternates' by share and 'coherent' on site-wide sweeps, tool discovery loses on blanket crawls, aggressive gains 'blast', scripted gains 'probe'. The *-User fetcher families were split from the training crawlers.",
     "v3, later the same evening: an MJ12bot crawl walked the ?oldid= / ?diff= / ?action= links the mirror itself emits and scored looping 0.9 and revisitation 0.8 without ever fetching the same url twice, plus scripted points for 'using query parameters'. revisit_rate and loop_score now key on the full url. variant_fetches/variant_share count site-emitted query variants (history walks, diffs, edit views); query_foreign counts keys the site never emits. scripted 'query' needs foreign keys now, search_bot and naive_crawler gain 'history_walk', curiosity credits it a little.",
-    "v4, same night: a distributed swarm (one six-year-old iphone safari string, 96 sessions, 86 network prefixes, one hit each) sent Pragma on every request and never fetched an asset, and the few members that made three or more requests were scoring human on cookie + few pages. New feature pragma_share; 'pragma_no_render' (declared browser, Pragma on 90%+ of requests, zero assets) counts toward automation and against human_browser. Single-hit members still land in unknown on purpose; the swarm itself is found across sessions by src/telemetry/swarm.ts, not by these rules."
+    "v4, same night: a distributed swarm (one six-year-old iphone safari string, 96 sessions, 86 network prefixes, one hit each) sent Pragma on every request and never fetched an asset, and the few members that made three or more requests were scoring human on cookie + few pages. New feature pragma_share; 'pragma_no_render' (declared browser, Pragma on 90%+ of requests, zero assets) counts toward automation and against human_browser. Single-hit members still land in unknown on purpose; the swarm itself is found across sessions by src/telemetry/swarm.ts, not by these rules.",
+    "v5 (2026-10-24): sql-injection scanners were scoring human_browser. five sessions in one week sent sqlmap payloads (UNION SELECT, EXTRACTVALUE, ORDER BY 1000) through ?action= and ?section= from residential prefixes behind rotating browser strings, returned the cookie, read one page, and the probe rule never fired because an edit view answers 200. New feature malformed_share; injection (n_malformed >= 5 and 30%+ of requests flagged) is +2.5 on scripted_agent, -3 on human_browser and +2 on automation_likelihood. Also stack_variants (distinct client-stack signatures in a session) and tls_variants / tls (what the proxy forwarded of the handshake), recorded for the signatures and swarm views, no rule reads them yet."
   ],
   "traits": {
     "automation_likelihood": {
@@ -375,6 +376,25 @@
           },
           "weight": 1.0,
           "note": "declares a browser, sends Pragma on every request, never fetched an asset"
+        },
+        {
+          "id": "injection",
+          "when": {
+            "all": [
+              {
+                "f": "n_malformed",
+                "op": ">=",
+                "v": 5
+              },
+              {
+                "f": "malformed_share",
+                "op": ">=",
+                "v": 0.3
+              }
+            ]
+          },
+          "weight": 2,
+          "note": "request after request flagged as a probe"
         }
       ]
     },
@@ -1397,6 +1417,25 @@
           },
           "weight": -1.5,
           "note": "a browser that sends Pragma on every request and never renders is a script wearing a browser string"
+        },
+        {
+          "id": "injection",
+          "when": {
+            "all": [
+              {
+                "f": "n_malformed",
+                "op": ">=",
+                "v": 5
+              },
+              {
+                "f": "malformed_share",
+                "op": ">=",
+                "v": 0.3
+              }
+            ]
+          },
+          "weight": -3,
+          "note": "a person does not type sql into the section parameter seventy times"
         }
       ]
     },
@@ -1955,6 +1994,25 @@
           },
           "weight": 1.5,
           "note": "only probes: many requests, no page ever rendered, mostly errors"
+        },
+        {
+          "id": "injection",
+          "when": {
+            "all": [
+              {
+                "f": "n_malformed",
+                "op": ">=",
+                "v": 5
+              },
+              {
+                "f": "malformed_share",
+                "op": ">=",
+                "v": 0.3
+              }
+            ]
+          },
+          "weight": 2.5,
+          "note": "five or more requests flagged as probes making up 30%+ of the session: an injection or path scanner, whatever the user-agent says"
         }
       ]
     },

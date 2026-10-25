@@ -35,7 +35,7 @@ export function scoreSessions(deps: JobDeps, opts: { debounceMs?: number; limit?
   const h = heuristics();
   for (const s of rows) {
     const events = db.all<EventRow>(
-      'SELECT ts, method, path, page_id, resource_kind, discover_class, depth, status, latency_ms, referer, referer_internal, accept, accept_lang, header_count, header_order_hash, header_names, cookie_present, cookie_valid, negotiated, robots_disallowed, canaries_exposed, canaries_seen, query_json, malformed, http_version, extra_json FROM events WHERE session_id = ? ORDER BY ts ASC LIMIT 2000',
+      'SELECT ts, method, path, page_id, resource_kind, discover_class, depth, status, latency_ms, referer, referer_internal, accept, accept_lang, header_count, header_order_hash, header_names, cookie_present, cookie_valid, negotiated, robots_disallowed, canaries_exposed, canaries_seen, query_json, malformed, http_version, extra_json, stack_hash FROM events WHERE session_id = ? ORDER BY ts ASC LIMIT 2000',
       s.id,
     );
     if (!events.length) continue;

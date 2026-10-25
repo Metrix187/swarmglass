@@ -8,7 +8,7 @@ import { openDb, type Db } from './db/db.ts';
 import { BufferedWriter } from './db/writer.ts';
 import { loadCatalog, pageInfoFor, type Catalog } from './wiki/content.ts';
 import { CanaryService } from './telemetry/canary.ts';
-import { Telemetry } from './telemetry/capture.ts';
+import { Telemetry, backfillStackHashes } from './telemetry/capture.ts';
 import { ExperimentRegistry } from './experiments/registry.ts';
 import { buildWikiRouter, notFound } from './wiki/routes.ts';
 import { createHttpServer, type Router } from './http/server.ts';
@@ -56,6 +56,7 @@ export async function startApp(opts: StartOpts = {}): Promise<App> {
     (cfg.dbPath === ':memory:' ? silentLogger : createLogger({ level: cfg.logLevel, dir: cfg.logDir, file: 'swarmglass.log', maxMb: cfg.limits.maxLogMb, base: { app: 'swarmglass', v: cfg.version } }));
 
   const db = openDb(cfg.dbPath);
+  backfillStackHashes(db, log);
   const writer = new BufferedWriter(db, log);
   const cat = loadCatalog(cfg.seedDir);
   const registry = ExperimentRegistry.load(join(cfg.configDir, 'experiments'));

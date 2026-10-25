@@ -585,3 +585,21 @@ test('console: history, signatures, activity and actor views answer from the sam
   assert.ok(an.dead_paths.some((p) => p.path === '/admin'), 'a plain foreign miss stays in its own list');
   assert.ok(!an.red_links.some((p) => !p.path.startsWith('/wiki/')));
 });
+
+test('the proxy\'s view of the handshake is recorded from a trusted peer, and the stack signature survives a cookie', async () => {
+  const fwd = { 'x-swarmglass-proto': 'HTTP/2.0', 'x-swarmglass-tls': 'tls1.3 TLS_AES_128_GCM_SHA256 h2' };
+  const r1 = await get('/wiki/Main_Page', { headers: { 'user-agent': 'transport-probe/1', ...fwd } });
+  const cookie = r1.headers.get('set-cookie')!.split(';')[0]!;
+  await r1.text();
+  await get('/wiki/Tool_Registry', { headers: { 'user-agent': 'transport-probe/1', cookie, ...fwd } });
+  flush();
+  const rows = app.db.all<{ http_version: string; extra_json: string; stack_hash: string; header_order_hash: string }>('SELECT http_version, extra_json, stack_hash, header_order_hash FROM events WHERE session_id = (SELECT id FROM sessions WHERE ua = ?) ORDER BY ts', 'transport-probe/1');
+  assert.equal(rows.length, 2);
+  for (const r of rows) {
+    assert.equal(r.http_version, '2.0', 'the client\'s version, not the proxy\'s');
+    assert.equal((JSON.parse(r.extra_json) as { tls?: string }).tls, 'tls1.3 TLS_AES_128_GCM_SHA256 h2');
+    assert.ok(r.stack_hash);
+  }
+  assert.equal(rows[0]!.stack_hash, rows[1]!.stack_hash, 'the cookie on the second request changes the header order, not the stack');
+  assert.notEqual(rows[0]!.header_order_hash, rows[1]!.header_order_hash);
+});
