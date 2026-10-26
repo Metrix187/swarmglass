@@ -14,6 +14,8 @@ export interface LiveEvent {
   canaries_seen: number;
   canaries_exposed: number;
   is_new_session: boolean;
+  handoffs?: number; // directed edges this request created
+  agent_query?: boolean; // a prompt-echo capture
 }
 
 export class LiveBus {

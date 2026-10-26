@@ -294,7 +294,7 @@ export function buildConsoleRouter(deps: ConsoleDeps): Router {
     auth.audit(s.user, 'bundle', `${def.id} ${level}`);
     return { status: 200, headers: { 'content-type': 'application/json; charset=utf-8', 'content-disposition': `attachment; filename="${def.id}-bundle-${dayKey(Date.now())}.json"` }, body: JSON.stringify(b, null, 2) };
   }), 'bundle');
-  r.get('/api/motifs', (req) => requireAuth(req, (rq) => j(200, { motifs: q.motifs(qd, range(rq), synth(rq), Math.min(5, Math.max(2, Number(rq.query.get('n') ?? 3) || 3))) })), 'motifs');
+  r.get('/api/motifs', (req) => requireAuth(req, (rq) => j(200, { motifs: q.motifs(qd, range(rq), synth(rq), Math.min(5, Math.max(2, Number(rq.query.get('n') ?? 3) || 3))), hop_chains: q.hopChains(qd, range(rq), synth(rq)) })), 'motifs');
   r.get('/api/anomalies', (req) => requireAuth(req, (rq) => j(200, q.anomalies(qd, range(rq), synth(rq)))), 'anomalies');
   r.get('/api/synthetic', (req) => requireAuth(req, () => j(200, q.syntheticReport(qd))), 'synthetic');
   r.get('/api/catalog', (req) => requireAuth(req, () => j(200, {

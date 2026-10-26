@@ -21,6 +21,12 @@ export interface RenderCtx {
   requestPath: string;
   now: number;
   assetVersion: string;
+  // the session graph's bait for this page, filled by ReqCtx.render(): a fake checksum / build id in the infobox,
+  // the per-session export link, an editor's comment pointing at the archive log, the json-ld lookup action
+  claim?: { label: string; value: string; href: string | null } | null;
+  exportHref?: string | null;
+  trailingComment?: string;
+  toolAction?: Record<string, unknown> | null;
 }
 
 export interface PageRender {
@@ -133,10 +139,13 @@ function infobox(page: Page, ctx: RenderCtx): string {
   const visible = ctx.canary('visible');
   ctx.exposures.push(visible);
   const extra = dense ? rows : rows.slice(0, 3);
+  // the claim row reads like any other infobox field. its value is unique to this session, so when it turns up in
+  // somebody else's request we know exactly which render it came from
+  const claim = ctx.claim ? `\n<tr><th>${esc(ctx.claim.label)}</th><td><code class="claim">${ctx.claim.href ? `<a href="${esc(ctx.claim.href)}" title="archived log" rel="nofollow">${esc(ctx.claim.value)}</a>` : esc(ctx.claim.value)}</code></td></tr>` : '';
   return `<table class="infobox">
 <tr><th colspan="2" class="infobox-title">${esc(page.title)}</th></tr>
 ${extra.map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`).join('\n')}
-<tr><th>Status</th><td>${esc(page.status)}</td></tr>
+<tr><th>Status</th><td>${esc(page.status)}</td></tr>${claim}
 <tr><th>Archive ref</th><td><span class="archive-ref" title="Swarmglass archive mirror reference">${visible.id}</span></td></tr>
 </table>`;
 }
@@ -177,6 +186,9 @@ export function jsonLdFor(page: Page, ctx: RenderCtx): string {
     data.relatedLink = related;
     data.encoding = page.alternates.map((a) => ({ '@type': 'MediaObject', encodingFormat: a === 'json' ? 'application/json' : a === 'yaml' ? 'application/yaml' : 'text/plain', contentUrl: `${ctx.baseUrl}${wikiHref(ctx.basePath, page.id)}.${a}` }));
   }
+  // the lookup action on the tool pages and on the structured-data experiment's target: a SearchAction whose
+  // query-input names the caller's role and upstream context as required
+  if (ctx.toolAction) data.potentialAction = ctx.toolAction;
   return JSON.stringify(data);
 }
 
@@ -318,7 +330,7 @@ ${pid ? `<li id="t-whatlinkshere"><a href="${bp}/wiki/Special:WhatLinksHere/${pa
 ${pid ? `<li id="t-print"><a href="${bp}${wikiHref('', pid)}?printable=yes" rel="alternate" title="Printable version of this page [p]" accesskey="p">Printable version</a></li>
 <li id="t-permalink"><a href="${bp}${wikiHref('', pid)}?oldid=${ctx.cat.routeNo.get(pid) ?? 0}" title="Permanent link to this revision of the page">Permanent link</a></li>
 <li id="t-info"><a href="${bp}${wikiHref('', pid)}?action=info" title="More information about this page">Page information</a></li>
-<li id="t-export"><a href="${bp}/wiki/Special:Export/${pageHref(pid)}" title="Export this page as XML">Export page</a></li>` : ''}
+<li id="t-export"><a href="${ctx.exportHref ?? `${bp}/wiki/Special:Export/${pageHref(pid)}`}" title="Export this page as XML">Export page</a></li>` : ''}
 </ul></div></div>
 <div class="portlet" id="p-archives"><h5>Archives</h5><div class="pBody"><ul>
 <li><a href="${bp}/archive/">Archive box</a></li>
@@ -339,7 +351,7 @@ ${lastmod}
 </ul>
 </div>
 </div>
-<!-- Served by mirror node 2 in 0.0${(ctx.now % 87) + 11} secs. ref ${comment.id} -->
+${ctx.trailingComment ? ctx.trailingComment + '\n' : ''}<!-- Served by mirror node 2 in 0.0${(ctx.now % 87) + 11} secs. ref ${comment.id} -->
 </body></html>
 `;
 }

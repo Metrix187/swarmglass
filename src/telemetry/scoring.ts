@@ -63,6 +63,7 @@ export interface Scores {
   likely_class: string;
   confidence: number; // top probability minus runner-up
   class_evidence: Record<string, Evidence[]>;
+  graph_evidence?: string[]; // cross-session labels from graph.ts, stated next to the rules that fired
 }
 
 export function loadHeuristics(path: string): Heuristics {

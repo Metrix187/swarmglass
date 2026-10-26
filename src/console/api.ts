@@ -10,6 +10,7 @@ import { compareExperiment, type Comparison } from '../experiments/compare.ts';
 import { isScannerPath } from '../http/security.ts';
 import { buildLinkGraph, channelPage, findHandoffs, handoffComponents, type Discovery, type Fetch } from '../telemetry/handoff.ts';
 import { UA_RULES, familyCategory } from '../telemetry/ua.ts';
+import * as g from './graphapi.ts';
 
 // read-side queries for the research console. everything returns plain json-able objects.
 // `synthetic` is always an explicit filter so test traffic never sneaks into a real chart.
@@ -136,17 +137,17 @@ export function listSessions(d: QueryDeps, o: SessionListOpts): { total: number;
   const order = { recent: 'last_seen_at DESC', requests: 'n_requests DESC', pages: 'n_unique_pages DESC', confidence: 'class_confidence DESC', hidden: 'n_machine DESC' }[o.sort];
   const total = d.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM sessions WHERE ${where.join(' AND ')}`, ...args)?.n ?? 0;
   const rows = d.db.all<Record<string, unknown>>(
-    `SELECT id, actor_hash, kind, started_at, last_seen_at, ended_at, ip_trunc, ua, ua_family, cookie_returned, n_requests, n_pages, n_unique_pages, n_errors, n_head, n_post, n_disallowed, n_subresources, n_machine, max_depth, first_path, last_path, first_referer_host, synthetic, synthetic_run, synthetic_persona, cohorts_json, likely_class, class_confidence, cluster_id, scored_at FROM sessions WHERE ${where.join(' AND ')} ORDER BY ${order} LIMIT ? OFFSET ?`,
+    `SELECT id, actor_hash, kind, started_at, last_seen_at, ended_at, ip_trunc, ua, ua_family, cookie_returned, n_requests, n_pages, n_unique_pages, n_errors, n_head, n_post, n_disallowed, n_subresources, n_machine, max_depth, first_path, last_path, first_referer_host, synthetic, synthetic_run, synthetic_persona, cohorts_json, likely_class, class_confidence, cluster_id, scored_at, graph_json FROM sessions WHERE ${where.join(' AND ')} ORDER BY ${order} LIMIT ? OFFSET ?`,
     ...args,
     o.limit,
     o.offset,
   );
-  return { total, rows: rows.map(decodeSessionRow) };
+  return { total, rows: rows.map((r) => { const d = decodeSessionRow(r); d.graph = g.graphSummary(d.graph); return d; }) };
 }
 
 function decodeSessionRow(r: Record<string, unknown>): Record<string, unknown> {
   const out = { ...r };
-  for (const k of ['cohorts_json', 'features_json', 'scores_json']) {
+  for (const k of ['cohorts_json', 'features_json', 'scores_json', 'graph_json']) {
     if (typeof out[k] === 'string') {
       try {
         out[k.replace('_json', '')] = JSON.parse(out[k] as string);
@@ -177,8 +178,17 @@ export function sessionDetail(d: QueryDeps, id: string): Record<string, unknown>
   for (let i = 1; i < events.length; i++) gaps.push((events[i] as EventRow).ts - (events[i - 1] as EventRow).ts);
   const gapHist = histogram(gaps, [50, 100, 250, 500, 1000, 2500, 5000, 15000, 60000]);
   const otherSessionsOfActor = db.all<{ id: string; started_at: number; n_requests: number; likely_class: string | null }>('SELECT id, started_at, n_requests, likely_class FROM sessions WHERE actor_hash = ? AND id != ? ORDER BY started_at DESC LIMIT 20', String(s.actor_hash), id);
+  // the session graph: who handed this session a url, whom it handed one to, what it told the lookup tools
+  const graph = (s.graph as Record<string, unknown> | null) ?? null;
+  const graphEdges = g.edgesFor(db, id);
+  const scratch = g.scratchpads(db, { since: 0, until: Date.now() }, 'all', 100, id);
+  const minted = g.tokensMinted(db, id);
   return {
     session: s,
+    graph,
+    handoffs: graphEdges,
+    agent_queries: scratch,
+    tokens_minted: minted,
     events: events.map((e) => ({ ...e, malformed: e.malformed ? JSON.parse(e.malformed) : null, canaries_exposed: e.canaries_exposed ? JSON.parse(e.canaries_exposed) : null, canaries_seen: e.canaries_seen ? JSON.parse(e.canaries_seen) : null, query: e.query_json ? JSON.parse(e.query_json) : null, extra: e.extra_json ? JSON.parse(e.extra_json) : null })),
     discoveries,
     edges,
@@ -421,7 +431,10 @@ export function canaryReport(d: QueryDeps, range: Range, synthetic: 'real' | 'sy
     range.since, range.until, ...sf.args,
   );
   const external = d.db.all<Record<string, unknown>>('SELECT ts, canary_id, seen_in, detail FROM canary_sightings WHERE external = 1 ORDER BY ts DESC LIMIT 50');
-  return { placements: byPlacement, sightings_by_placement: sightingsByPlacement, sightings_by_where: byWhere, recent, propagation_edges: edges, external };
+  // per-session tokens: minted, presented by someone else, and the directed edges that made
+  const tokens = g.tokenStats(d.db, range, synthetic);
+  const directed = g.recentEdges(d.db, range, synthetic, 40).filter((e) => e.kind === 'token');
+  return { placements: byPlacement, sightings_by_placement: sightingsByPlacement, sightings_by_where: byWhere, recent, propagation_edges: edges, external, tokens, directed };
 }
 
 export function recordExternalSighting(d: QueryDeps, input: { canary_id: string; source: string; url?: string; note?: string }): { ok: boolean; error?: string } {
@@ -442,6 +455,11 @@ export function experimentDetail(d: QueryDeps, id: string, range: Range, synthet
   const def = d.registry.get(id);
   if (!def) return null;
   return compareExperiment(d.db, d.cat, def, range, synthetic, d.registry.active());
+}
+
+export function hopChains(d: QueryDeps, range: Range, synthetic: 'real' | 'synthetic' | 'all'): Record<string, unknown> {
+  const list = g.chains(d.db, range, synthetic);
+  return { chains: list, motifs: g.chainMotifs(list), complete: list.filter((c) => c.complete).length };
 }
 
 export function motifs(d: QueryDeps, range: Range, synthetic: 'real' | 'synthetic' | 'all', n = 3): Array<Record<string, unknown>> {
@@ -730,7 +748,11 @@ export function handoffs(d: QueryDeps, range: Range, synthetic: 'real' | 'synthe
     return { actors: members.slice(0, 40), actor_count: c.actors.length, edges: c.edges, pages: c.pages, families, prefixes, swarms, median_lag_ms: lags.length ? median(lags) : null, first: edges.length ? edges[0]!.ts : null, last: edges.length ? edges[edges.length - 1]!.ts : null };
   });
   const sample = r.handoffs.slice(-80).reverse().map((h) => ({ ...h, from_family: actors.get(h.from_actor)?.ua_family ?? null, to_family: actors.get(h.to_actor)?.ua_family ?? null }));
-  return { considered: r.considered, explained: r.explained, handoffs: r.handoffs.length, unsourced: r.unsourced, share: r.share, median_lag_ms: r.median_lag_ms, top_pages: r.top_pages, components, sample };
+  // the recorded graph next to the inferred one: directed token edges (certain), cohort and precursor edges (a
+  // distribution), and the breadcrumb chains walked hop by hop
+  const edges = g.recentEdges(db, range, synthetic);
+  const chainReport = hopChains(d, range, synthetic);
+  return { considered: r.considered, explained: r.explained, handoffs: r.handoffs.length, unsourced: r.unsourced, share: r.share, median_lag_ms: r.median_lag_ms, top_pages: r.top_pages, components, sample, edges, edge_totals: g.edgeTotals(db, range, synthetic), chains: chainReport.chains, chain_motifs: chainReport.motifs, chains_complete: chainReport.complete };
 }
 
 interface ActorInfo {
@@ -815,5 +837,5 @@ export function llmTraffic(d: QueryDeps, range: Range, synthetic: 'real' | 'synt
       const s = p.summary as { ua_family?: string; families?: string[] } | null;
       return Boolean(s && ((s.ua_family && aiFamilies.includes(s.ua_family)) || (s.families ?? []).some((f) => aiFamilies.includes(f))));
     });
-  return { families, pools, handoffs: hx.handoffs, ai_families_known: aiFamilies };
+  return { families, pools, handoffs: hx.handoffs, ai_families_known: aiFamilies, scratchpads: g.scratchpads(db, range, synthetic), scratchpad_totals: g.scratchpadTotals(db, range, synthetic), directed_edges: g.recentEdges(db, range, synthetic, 60).filter((e) => e.kind === 'token') };
 }

@@ -7,6 +7,7 @@ import { score, type Heuristics } from './scoring.ts';
 import { clusterSessions, loadClusterSessions } from './cluster.ts';
 import { detectSwarms, loadSwarmSessions, swarmHandoffs, swarmProfile } from './swarm.ts';
 import { buildLinkGraph } from './handoff.ts';
+import { gatherGraph } from './graph.ts';
 import { diskGuard, purgeOlderThan } from './retention.ts';
 import { randomId } from '../util/hash.ts';
 import { dayKey, fmtDuration } from '../util/time.ts';
@@ -29,10 +30,16 @@ export function scoreSessions(deps: JobDeps, opts: { debounceMs?: number; limit?
   const { db, heuristics, pageInfo } = deps;
   const debounce = opts.debounceMs ?? 15_000;
   const limit = opts.limit ?? 300;
+  // a session whose graph changed after it was scored (somebody presented its token, an edge landed on it) is
+  // scored again too: the evidence lives in other sessions' requests, so last_seen_at alone would miss it
   const rows = opts.all
-    ? db.all<SessionRow & { scored_at: number | null }>('SELECT id, actor_hash, kind, started_at, last_seen_at, ua, ua_family, cookie_returned, synthetic, scored_at FROM sessions ORDER BY last_seen_at DESC LIMIT ?', limit)
-    : db.all<SessionRow & { scored_at: number | null }>(
-        'SELECT id, actor_hash, kind, started_at, last_seen_at, ua, ua_family, cookie_returned, synthetic, scored_at FROM sessions WHERE (scored_at IS NULL OR last_seen_at > scored_at) AND last_seen_at < ? ORDER BY last_seen_at ASC LIMIT ?',
+    ? db.all<SessionRow & { scored_at: number | null; cluster_id: string | null }>('SELECT id, actor_hash, kind, started_at, last_seen_at, ua, ua_family, cookie_returned, synthetic, scored_at, cluster_id FROM sessions ORDER BY last_seen_at DESC LIMIT ?', limit)
+    : db.all<SessionRow & { scored_at: number | null; cluster_id: string | null }>(
+        `SELECT id, actor_hash, kind, started_at, last_seen_at, ua, ua_family, cookie_returned, synthetic, scored_at, cluster_id FROM sessions
+         WHERE ((scored_at IS NULL OR last_seen_at > scored_at) AND last_seen_at < ?)
+            OR id IN (SELECT from_session FROM handoff_edges WHERE ts > COALESCE((SELECT scored_at FROM sessions s2 WHERE s2.id = handoff_edges.from_session), 0))
+            OR id IN (SELECT to_session FROM handoff_edges WHERE ts > COALESCE((SELECT scored_at FROM sessions s2 WHERE s2.id = handoff_edges.to_session), 0))
+         ORDER BY last_seen_at ASC LIMIT ?`,
         Date.now() - debounce,
         limit,
       );
@@ -47,15 +54,18 @@ export function scoreSessions(deps: JobDeps, opts: { debounceMs?: number; limit?
     const xs = db.get<{ n: number }>('SELECT COUNT(*) AS n FROM canary_sightings WHERE session_id = ? AND cross_session = 1', s.id)?.n ?? 0;
     const xa = db.get<{ n: number }>('SELECT COUNT(*) AS n FROM canary_sightings WHERE session_id = ? AND cross_actor = 1', s.id)?.n ?? 0;
     const features = computeFeatures(s, events, pageInfo, xs, xa);
-    const scores = score(h, features);
+    // cross-session evidence: edges, prompt-echo captures, cohort matches. adds graph_* features and the labels
+    const graph = gatherGraph(db, s, events, features);
+    const scores = { ...score(h, features), graph_evidence: graph.labels };
     db.run(
-      'UPDATE sessions SET features_json = ?, scores_json = ?, likely_class = ?, class_confidence = ?, scored_at = ?, n_unique_pages = ? WHERE id = ?',
+      'UPDATE sessions SET features_json = ?, scores_json = ?, likely_class = ?, class_confidence = ?, scored_at = ?, n_unique_pages = ?, graph_json = ? WHERE id = ?',
       JSON.stringify(features),
       JSON.stringify(scores),
       scores.likely_class,
       scores.confidence,
       Date.now(),
       features.n_unique_pages,
+      JSON.stringify(graph),
       s.id,
     );
     n++;

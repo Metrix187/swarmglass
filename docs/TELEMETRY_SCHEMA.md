@@ -13,6 +13,9 @@ erDiagram
   canaries ||--o{ canary_sightings : "canary_id"
   clusters ||--o{ sessions : "cluster_id"
   synthetic_runs ||--o{ sessions : "synthetic_run"
+  sessions ||--o{ session_tokens : "session_id"
+  sessions ||--o{ handoff_edges : "from_session / to_session"
+  sessions ||--o{ agent_queries : "session_id"
 ```
 
 ## sessions
@@ -79,6 +82,17 @@ One row per request, including rate-limited (429) and client-error (parse failur
 - `canaries`: every id ever issued — `scope` (`R` route, `S` session, `E` experiment, `C` campaign, `X` external), `route_no`, `page_id`, `placement` (`visible`, `comment`, `meta`, `jsonld`, `header`, `feed`, `api`, `attachment`, `text`, `json`, `yaml`, `manifest`, `sitemap`, `robots`, `title`, `link`), experiment/arm, owning session for `S`, seed version, first/last issued, issue count.
 - `canary_exposures`: (canary, session) first-exposure pairs with placement and actor.
 - `canary_sightings`: a canary appeared in a request. `seen_in` is `path` · `query:<key>` · `referer` · `ua` · `header:<name>` · `cookie:<name>` · `body` · `external:<source>`. `cross_session` = the presenting session was never exposed; `cross_actor` = neither was its actor; `exposure_session_id` = the earliest exposed session; `delta_ms` since first exposure; `external` = recorded by a researcher (search index, forum, model output); `detail` = ≤120 chars of scrubbed context.
+
+## session_tokens / handoff_edges / agent_queries (migration 004)
+
+The cross-session graph as a record. A token is minted for one (session, page, section) and planted in that session's response; whoever presents it later was handed it by exactly that session.
+
+- `session_tokens`: `token` (8 lowercase hex, HMAC-derived so a re-render repeats it), `session_id`, `actor_hash`, `page_id` (a page id or `api:<route>`), `section` (`infobox_claim` · `comment_archive_log` · `export_link` · `anomaly_ref` · `feed_record` · `related_changes` · `verify_response` · `lookup_response`), `hop` (0 claim/link, 1 anomaly reference, 2 export key, 3 feed/verify key), `arm_vector` ("001:B 002:A …"), `cohort_slug` (the `cv=` watermark), issue times and count, `synthetic`. Every token is also a `canaries` row with id `SGT-<token>`, scope `S`, placement `token`, and a `canary_exposures` row for the minting session, so a cross-session presentation is a `canary_sightings` row like any other.
+- `handoff_edges`: one directed edge per (kind, token, origin, target, page), id `SW-` + 8 hex (swarm pools in `clusters` are `SW-` + 6 hex). `kind` = `token` (certain: the target presented the origin's token; `hop`, `token`, `section`, `seen_in` say which and where), `cohort` (the target landed cold on a `cv=` url; `confidence` is the origin's share of the distribution over sessions served that arm vector, `candidates_json` the distribution), or `precursor` (no watermark; a declared crawler read the same page from another address inside 72 h). `from_family` / `to_family` carry the user-agent transition, `delta_ms` the time since the token was minted or the precursor fetched, `target_path` what the target asked for.
+- `agent_queries`: a prompt-echo capture per call to `/api/v1/colony/lookup`, `/api/v1/registry/verify` or `Special:AgentQuery`: `endpoint`, `method`, `complete` (every required field present), `query_text`, `caller_role`, `upstream_context`, `verification_token`, `origin_session_id` (who the presented key was minted for, when it was ours), `token_issued` (the fresh token handed back), `params_json`, `body_text` (bounded; the only place request bodies are stored), `headers_json` (allowlisted values plus wire-order names), `status`, `synthetic`.
+- `sessions.cohort_slug`: the arm vector as a six-character base36 slug, set on insert and update and backfilled at boot. `sessions.graph_json`: what `src/telemetry/graph.ts` gathered at scoring time (labels, edges in and out, captures, precursors, cohort match, shape flags); `scores_json.graph_evidence` repeats the labels.
+
+All three tables age out with the retention purge.
 
 ## page_discoveries / nav_edges
 

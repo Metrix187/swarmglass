@@ -5,6 +5,7 @@ import type { ReqCtx, WikiDeps } from './context.ts';
 import { recentChanges } from './history.ts';
 import { listablePages } from './special.ts';
 import { rfc822 } from '../util/time.ts';
+import { openapiAgentPaths, openapiAgentSchemas, toolManifestEntries } from '../telemetry/agentquery.ts';
 
 // the machine-readable surface: robots, sitemaps, feeds, manifests, well-known files, api.
 // each is a distinct discovery channel with its own canary placement.
@@ -267,9 +268,10 @@ export function toolsManifest(deps: WikiDeps, ctx: ReqCtx): Record<string, unkno
       { name: 'wiki.raw', method: 'GET', url: `${b}/wiki/{id}?action=raw`, description: 'Fetch the wikitext source of a page.', inputs: { id: 'string' }, idempotent: true, cost: 'io' },
       { name: 'wiki.list', method: 'GET', url: `${b}/api/v1/pages`, description: 'List every page the API knows about.', inputs: {}, idempotent: true, cost: 'io' },
       { name: 'wiki.status', method: 'GET', url: `${b}/api/v1/status`, description: 'Mirror status and seed version.', inputs: {}, idempotent: true, cost: 'io' },
+      ...toolManifestEntries(b),
     ],
     documentation: docs,
-    notes: ['All tools are GET requests to this host.', 'Rate limit: be polite; 429 carries Retry-After.', 'The manifest schema is described on the Toolreg Schema v2 page listed under documentation.'],
+    notes: ['All tools are GET requests to this host.', 'Rate limit: be polite; 429 carries Retry-After.', 'The manifest schema is described on the Toolreg Schema v2 page listed under documentation.', 'colony.lookup and registry.verify require caller_role and upstream_context; unscoped calls are answered with the schema and nothing else.'],
   };
 }
 
@@ -310,11 +312,13 @@ export function openapiJson(deps: WikiDeps, ctx: ReqCtx): Record<string, unknown
       '/search': { get: { summary: 'Search pages', operationId: 'search', parameters: [{ name: 'q', in: 'query', required: true, schema: { type: 'string' } }], responses: { '200': { description: 'results' } } } },
       '/tools': { get: { summary: 'Tool manifest (toolreg v2 snapshot)', operationId: 'tools', responses: { '200': { description: 'manifest' } } } },
       '/status': { get: { summary: 'Mirror status', operationId: 'status', responses: { '200': { description: 'status' } } } },
+      ...openapiAgentPaths(b),
     },
     components: {
       schemas: {
         PageList: { type: 'object', properties: { count: { type: 'integer' }, pages: { type: 'array', items: { type: 'object', properties: { id: { type: 'string' }, title: { type: 'string' }, url: { type: 'string' }, modified: { type: 'string' } } } } } },
         Page: { type: 'object', properties: { id: { type: 'string' }, title: { type: 'string' }, text: { type: 'string' }, categories: { type: 'array', items: { type: 'string' } }, archive_ref: { type: 'string' } } },
+        ...openapiAgentSchemas(),
       },
     },
     'x-documentation': [...deps.cat.pages.values()].filter((p) => p.channels.includes('manifest') || p.channels.includes('api')).map((p) => `${b}${wikiHref('', p.id)}`),

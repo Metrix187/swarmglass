@@ -8,7 +8,10 @@ import { openDb, type Db } from './db/db.ts';
 import { BufferedWriter } from './db/writer.ts';
 import { loadCatalog, pageInfoFor, type Catalog } from './wiki/content.ts';
 import { CanaryService } from './telemetry/canary.ts';
-import { Telemetry, backfillStackHashes } from './telemetry/capture.ts';
+import { Telemetry, backfillCohortSlugs, backfillStackHashes } from './telemetry/capture.ts';
+import { SessionTokenService } from './telemetry/tokens.ts';
+import { buildLinkGraph } from './telemetry/handoff.ts';
+import { CLAIM_PAGES, HOP1_HOST_PAGES } from './wiki/lore.ts';
 import { ExperimentRegistry } from './experiments/registry.ts';
 import { buildWikiRouter, notFound } from './wiki/routes.ts';
 import { createHttpServer, type Router } from './http/server.ts';
@@ -57,6 +60,7 @@ export async function startApp(opts: StartOpts = {}): Promise<App> {
 
   const db = openDb(cfg.dbPath);
   backfillStackHashes(db, log);
+  backfillCohortSlugs(db, log);
   const writer = new BufferedWriter(db, log);
   const cat = loadCatalog(cfg.seedDir);
   const registry = ExperimentRegistry.load(join(cfg.configDir, 'experiments'));
@@ -69,9 +73,14 @@ export async function startApp(opts: StartOpts = {}): Promise<App> {
   };
 
   const canaries = new CanaryService({ secret: cfg.secretKey, seedVersion: cat.version, db, writer, routeNo: (id) => cat.routeNo.get(id) ?? 0 });
-  const telemetry = new Telemetry({ cfg, db, writer, log, canaries });
+  const tokens = new SessionTokenService({ secret: cfg.secretKey, db, writer, routeNo: (id) => cat.routeNo.get(id) ?? 0 });
+  // who could have handed out a url to page X: the pages linking there, plus every page that carries a cv= link
+  const graph = buildLinkGraph(cat);
+  const carriers = [...Object.keys(CLAIM_PAGES), ...HOP1_HOST_PAGES];
+  const parentsOf = (pageId: string) => [...new Set([...(graph.parents.get(pageId) ?? []), ...carriers])];
+  const telemetry = new Telemetry({ cfg, db, writer, log, canaries, tokens, parentsOf });
   const assetsDir = join(ROOT, 'assets');
-  const wikiDeps: WikiDeps = { cfg, cat, canaries, registry, assetsDir, log, assetVersion: shortHash(cat.version + cfg.version, 6) };
+  const wikiDeps: WikiDeps = { cfg, cat, canaries, tokens, registry, assetsDir, log, assetVersion: shortHash(cat.version + cfg.version, 6) };
   const isTrusted = (ip: string) => inAnyCidr(cfg.trustedProxies, ip);
 
   // record active experiment definitions so results stay reproducible

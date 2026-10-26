@@ -26,6 +26,8 @@ export function pageText(cat: Catalog, page: Page, ctx: ReqCtx): string {
   });
   // conditional blocks: keep the arm the actor is in
   const filtered = page.body.includes('{{#') ? applyConditionals(body, v.doc_language) : body;
+  const claim = ctx.claim(page.id);
+  const hop2 = ctx.hop2(page.id);
   return [
     `${page.title}`,
     `${'='.repeat(page.title.length)}`,
@@ -33,8 +35,11 @@ export function pageText(cat: Catalog, page: Page, ctx: ReqCtx): string {
     `Last modified: ${page.modified} · Revisions: ${page.revisions} · Status: ${page.status}`,
     `Categories: ${page.categories.join(', ') || '(none)'}`,
     `Archive ref: ${c.id}`,
+    ...(claim ? [`${claim.label}: ${claim.value}`] : []),
     '',
     filtered,
+    // the structured records the lore pages point at: machine representations only, never the html
+    ...(hop2 ? hop2.lines : []),
   ].join('\n');
 }
 
@@ -52,11 +57,15 @@ export function pageJson(cat: Catalog, page: Page, ctx: ReqCtx): Record<string, 
   const r = ctx.render(page.id);
   const base = `${r.baseUrl}${r.basePath}`;
   const text = toPlainText(page.body, (name, arg) => (name === 'canary' ? c.id : name === 'attachment' ? `[attachment: ${arg}]` : name === 'dead' ? arg : name === 'sig' ? `-- ${arg}` : name === 'platform' ? cat.world.platform : name === 'org' ? cat.world.org : ''));
+  const claim = ctx.claim(page.id);
+  const hop2 = ctx.hop2(page.id);
   return {
     id: page.id,
     title: page.title,
     url: `${base}/wiki/${encodeURIComponent(page.id)}`,
     archive_ref: c.id,
+    ...(claim ? { [claim.label.toLowerCase().replace(/ /g, '_')]: claim.value } : {}),
+    ...(hop2 ? { unresolved: hop2.json } : {}),
     kind: page.kind,
     status: page.status,
     categories: page.categories,
@@ -115,10 +124,12 @@ export function pageYaml(cat: Catalog, page: Page, ctx: ReqCtx): string {
   return `# ${page.title} — ${cat.world.wikiName} mirror export\n${toYaml(obj)}\n`;
 }
 
-// MediaWiki-style Special:Export xml
-export function pageExportXml(cat: Catalog, page: Page, ctx: ReqCtx): string {
+// MediaWiki-style Special:Export xml. `viaToken` is set when the export was reached through a per-session export
+// link; the token rides into the text so a re-export from a copy carries it too
+export function pageExportXml(cat: Catalog, page: Page, ctx: ReqCtx, viaToken: string | null = null): string {
   const c = ctx.canary(page.id, 'attachment');
   ctx.exposures.push(c);
+  const claim = ctx.claim(page.id);
   const revs = revisionsFor(page, cat.world, cat.version);
   const last = revs[revs.length - 1];
   const x = (s: string) => s.replace(/[&<>]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[ch] as string);
@@ -139,7 +150,7 @@ export function pageExportXml(cat: Catalog, page: Page, ctx: ReqCtx): string {
       <contributor><username>${x(last?.author ?? 'unknown')}</username></contributor>
       <comment>${x(last?.summary ?? '')}</comment>
       <text xml:space="preserve">${x(page.body)}
-&lt;!-- archive ref ${c.id} --&gt;</text>
+&lt;!-- archive ref ${c.id}${claim ? ` · ${x(claim.label.toLowerCase())} ${x(claim.value)}` : ''}${viaToken ? ` · export ${x(viaToken)}` : ''} --&gt;</text>
     </revision>
   </page>
 </mediawiki>

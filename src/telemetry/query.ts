@@ -2,7 +2,9 @@
 // a crawler following those isn't "using query parameters", it's following links, and it isn't
 // revisiting anything either, every ?oldid= is a different url. keep this list honest: only keys the
 // mirror actually emits. anything else is the visitor's own idea, and that's the interesting part.
-export const FURNITURE_KEYS: ReadonlySet<string> = new Set(['action', 'oldid', 'diff', 'section', 'printable', 'redirect', 'returnto', 'namespace', 'page', 'search', 'q', 'fulltext']);
+// ref_ctx / cv ride on the per-session links the lore pages emit; the agent fields are what the lookup schema asks
+// for, so an agent sending them is following the tool definition, not probing
+export const FURNITURE_KEYS: ReadonlySet<string> = new Set(['action', 'oldid', 'diff', 'section', 'printable', 'redirect', 'returnto', 'namespace', 'page', 'search', 'q', 'fulltext', 'ref_ctx', 'cv', 'key', 'query', 'caller_role', 'upstream_context', 'task_summary', 'verification_token']);
 
 export type Query = Record<string, string>;
 

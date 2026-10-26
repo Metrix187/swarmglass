@@ -85,6 +85,23 @@ Computed by `computeFeatures()` in `src/telemetry/features.ts` from the session'
 | `canary_seen` | canaries found in requests |
 | `canary_self_reuse` | sightings of canaries this session had been shown earlier |
 | `canary_cross_session`, `canary_cross_actor` | sightings of canaries never shown to this session / actor |
+| `graph_handoffs_in`, `graph_handoffs_out` | token edges into / out of this session (`handoff_edges`, kind `token`): per-session tokens it presented that were minted for another session, and tokens minted for it that another session presented. Added by `src/telemetry/graph.ts` at scoring time, from the persisted graph |
+| `graph_token_sightings` | same as `graph_handoffs_in` (kept for the rules' wording) |
+| `graph_agent_queries`, `graph_agent_queries_complete` | prompt-echo captures by this session, and those with every required field |
+| `graph_crawler_precursor` | a declared crawler (search / ai_crawler / seo category) read the page this session landed on, from another address, inside 72 h (`handoff_edges` kind `precursor`) |
+| `graph_cohort_match` | confidence of the best `cv=` cohort attribution for this session's cold landing (kind `cohort`), 0 when none |
+| `graph_swarm_member`, `graph_cluster_member` | the session's `cluster_id` is a swarm pool (`SW-` + 6 hex) / a behavioural cohort (`CL-`) |
+| `graph_hop_max` | the highest hop among the tokens this session presented (1 anomaly reference, 2 export key, 3 feed / verify key) |
+| `graph_linked` | any of: a token edge in, a precursor, a cohort match ≥ 0.4, swarm membership, a cross-session canary sighting |
+| `graph_tokens_minted` | per-session tokens placed in this session's responses |
+| `cold_deep_landing` | the first page-ish request landed at depth ≥ 7, on a hidden class, or on an alternate / feed, and no request carried an internal referer |
+| `delegated_fetch_shape` | ≤ 2 requests, no cookie returned, no assets, `cold_deep_landing`, and (for two requests) under 1.5 s between them |
+| `ua_spoof_suspected` | `delegated_fetch_shape` with a browser-category user-agent and no `sec-fetch-*` headers |
+| `graph_evidence_count` | number of stated labels in `graph_json.labels` |
+
+## Graph evidence (`sessions.graph_json`, `scores_json.graph_evidence`)
+
+Labels, each one a stated observation across sessions: `delegated_swarm_fetch`, `cross_session_handoff:<edge id>`, `handoff_origin:<edge id>`, `crawler_precursor:<family>@<age>`, `cohort_match:cv|vector:<share>`, `ua_spoof_suspected:<family>_no_subresources`, `prompt_echo:<endpoint>[:incomplete]`, `hop_chain:reached_hop_<n>`, `swarm_member:<SW-…>`, `cluster_member:<CL-…>`, `canary_cross_session:<n>`. `graph_json` also carries the edges in and out, the prompt-echo captures, the precursors, the cohort match, and the shape flags. None of it names anybody.
 
 ## Traits (`scores_json.traits`, each 0–1 with evidence)
 

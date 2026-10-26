@@ -16,6 +16,9 @@ import { CanaryService, type Canary, type Sighting } from './canary.ts';
 import { LiveBus } from './bus.ts';
 import { RateLimiter } from '../http/security.ts';
 import { inAnyCidr } from '../util/ip.ts';
+import { SessionTokenService, TOKEN_CANARY_PREFIX, type IssuedToken, type TokenSighting } from './tokens.ts';
+import { attributeByPrecursor, attributeBySlug, slugFor, type CohortMatch } from './cohort.ts';
+import { captureHeaders, type AgentQueryParsed } from './agentquery.ts';
 
 // header names a proxy adds, a browser adds per request, or a body brings along; everything else is the client
 // stack's own habit and the same on every request it ever makes, whatever user-agent string it wears
@@ -68,6 +71,41 @@ export interface ResMeta {
   channel?: string; // when the resource *is* a discovery channel: robots|sitemap|feed|manifest|api|index|stale_index
   malformed?: string[];
   noStore?: boolean; // e.g. console health checks
+  tokens?: IssuedToken[]; // per-session tokens placed in this response
+  agentQuery?: AgentQueryParsed & { status: number; tokenIssued: string | null; originToken: IssuedToken | null }; // a prompt-echo capture
+}
+
+// an edge in the session graph, as capture records it. see 004_swarm_graph.sql
+export interface EdgeInput {
+  ts: number;
+  kind: 'token' | 'cohort' | 'precursor';
+  hop: number | null;
+  token: string | null;
+  from: { session: string; actor: string | null; family: string | null };
+  to: { session: string; actor: string | null; family: string | null };
+  pageId: string | null;
+  section: string | null;
+  targetPath: string;
+  seenIn: string | null;
+  deltaMs: number | null;
+  confidence: number;
+  candidates: unknown | null;
+  synthetic: boolean;
+}
+
+export function edgeId(e: Pick<EdgeInput, 'kind' | 'token' | 'from' | 'to' | 'pageId'>): string {
+  // SW- plus eight hex. swarm pools are SW- plus six; both read as swarm evidence and never collide
+  return 'SW-' + shortHash(`${e.kind}|${e.token ?? ''}|${e.from.session}|${e.to.session}|${e.pageId ?? ''}`, 8).toUpperCase();
+}
+
+// the shape of a stateless delegated fetch: a request or two, no cookie, nothing rendered, landing cold on something
+// deep or hidden with no internal referer. this is the session the single-session rules can only call unknown
+const HIDDEN_CLASSES = new Set(['orphan', 'obscure', 'comment_only', 'robots_only', 'sitemap_only', 'feed_only', 'jsonld_only', 'og_only', 'header_only', 'manifest_only', 'api_only', 'index_only', 'stale_index_only', 'link_only', 'multi_channel', 'experiment']);
+export function coldDeepLanding(meta: ResMeta, refererInternal: boolean): boolean {
+  if (refererInternal) return false;
+  if (typeof meta.depth === 'number' && meta.depth >= 7) return true;
+  if (meta.discover && HIDDEN_CLASSES.has(meta.discover)) return true;
+  return meta.kind === 'alt' || meta.kind === 'feed';
 }
 
 export interface SyntheticTag {
@@ -87,19 +125,23 @@ export class Telemetry {
   readonly log: Logger;
   readonly sessions: SessionStore;
   readonly canaries: CanaryService;
+  readonly tokens: SessionTokenService;
   readonly bus = new LiveBus();
   readonly limiter: RateLimiter;
   private readonly publicHosts: string[];
+  private readonly parentsOf: (pageId: string) => string[];
   private exposureCache = new Map<string, Set<string>>(); // canary -> session ids (bounded via sessions LRU semantics)
   private seenRuns = new Set<string>();
-  stats = { requests: 0, sightings: 0, newSessions: 0, resumed: 0, limited: 0, malformed: 0 };
+  stats = { requests: 0, sightings: 0, newSessions: 0, resumed: 0, limited: 0, malformed: 0, handoffs: 0, agentQueries: 0 };
 
-  constructor(opts: { cfg: Config; db: Db; writer: BufferedWriter; log: Logger; canaries: CanaryService }) {
+  constructor(opts: { cfg: Config; db: Db; writer: BufferedWriter; log: Logger; canaries: CanaryService; tokens?: SessionTokenService; parentsOf?: (pageId: string) => string[] }) {
     this.cfg = opts.cfg;
     this.db = opts.db;
     this.writer = opts.writer;
     this.log = opts.log;
     this.canaries = opts.canaries;
+    this.tokens = opts.tokens ?? new SessionTokenService({ secret: opts.cfg.secretKey, db: opts.db, writer: opts.writer });
+    this.parentsOf = opts.parentsOf ?? (() => []);
     this.sessions = new SessionStore(opts.cfg, sessionLoader(opts.db));
     this.limiter = new RateLimiter(opts.cfg.limits.rateRps, opts.cfg.limits.rateBurst);
     const hosts: string[] = [];
@@ -192,6 +234,10 @@ export class Telemetry {
     const ref = refererFields(req.headers['referer'], this.publicHosts);
     const sightings = CanaryService.scanRequest(req);
     const exposed = meta.canaries ?? [];
+    const issuedTokens = meta.tokens ?? [];
+    // tokens minted for *another* session that this request carries: each one is a directed edge. a session
+    // presenting its own token is following a link it was given, which is navigation, not evidence
+    const tokenSightings = this.tokens.scanRequest(req).filter((t) => t.origin.sessionId !== session.id);
 
     // ---- session in-memory update ----
     const s = session;
@@ -255,8 +301,29 @@ export class Telemetry {
       }
       set.add(s.id);
     }
+    for (const t of issuedTokens) s.exposed.add(TOKEN_CANARY_PREFIX + t.token);
     const enriched = sightings.map((sg) => this.enrichSighting(sg, s, at));
+    // token sightings become canary sightings too (so every counter the console already has moves) and edges
+    const edges: EdgeInput[] = [];
+    for (const t of tokenSightings) {
+      const fromFamily = this.familyOf(t.origin.sessionId);
+      enriched.push({ id: TOKEN_CANARY_PREFIX + t.token, where: t.where, detail: t.detail, crossSession: true, crossActor: t.origin.actorHash !== s.actorHash, exposureSession: t.origin.sessionId, deltaMs: at - t.origin.issuedAt });
+      edges.push({ ts: at, kind: 'token', hop: t.origin.hop, token: t.token, from: { session: t.origin.sessionId, actor: t.origin.actorHash, family: fromFamily }, to: { session: s.id, actor: s.actorHash, family: s.uaFamily }, pageId: t.origin.pageId, section: t.origin.section, targetPath: scrub(req.path, 512), seenIn: t.where, deltaMs: at - t.origin.issuedAt, confidence: 1, candidates: null, synthetic: s.synthetic || t.origin.synthetic });
+    }
+    // a cold landing on something deep by a session that has done almost nothing: who was served this? the cv=
+    // watermark names the arm vector when it is there; a declared crawler that read the same page shortly before
+    // is the fallback. never run when a token already settled the question for this page
+    if (isPageHit && res.status < 400 && s.nRequests <= 2 && !s.cookieReturned && s.nSubresources === 0 && coldDeepLanding(meta, ref.internal) && !edges.some((e) => e.kind === 'token')) {
+      const match = this.attribute(req, s, meta, at);
+      if (match?.top) {
+        edges.push({ ts: at, kind: match.method, hop: null, token: null, from: { session: match.top.session_id, actor: match.top.actor_hash, family: match.top.ua_family }, to: { session: s.id, actor: s.actorHash, family: s.uaFamily }, pageId: meta.pageId ?? null, section: null, targetPath: scrub(req.path, 512), seenIn: match.slug ? 'query:cv' : null, deltaMs: at - match.top.last_seen_at, confidence: match.top.prob, candidates: match.candidates, synthetic: s.synthetic });
+      }
+    }
     if (enriched.length) this.stats.sightings += enriched.length;
+    if (edges.length) this.stats.handoffs += edges.length;
+    const agentQuery = meta.agentQuery ?? null;
+    if (agentQuery) this.stats.agentQueries++;
+    const agentHeaders = agentQuery ? JSON.stringify(captureHeaders(req)) : null;
 
     // ---- persist ----
     const sessionSnapshot = isNew || !s.persisted ? snapshotForInsert(s) : null;
@@ -296,7 +363,7 @@ export class Telemetry {
       cookie_valid: Boolean(req.state.cookieValid),
       negotiated: meta.negotiated ?? null,
       robots_disallowed: Boolean(meta.robotsDisallowed),
-      canaries_exposed: exposed.length ? JSON.stringify(exposed.map((c) => c.id)) : null,
+      canaries_exposed: exposed.length || issuedTokens.length ? JSON.stringify([...exposed.map((c) => c.id), ...issuedTokens.map((t) => TOKEN_CANARY_PREFIX + t.token)]) : null,
       canaries_seen: enriched.length ? JSON.stringify(enriched.map((e) => ({ id: e.id, where: e.where }))) : null,
       cohorts_json: Object.keys(s.cohorts).length ? JSON.stringify(s.cohorts) : null,
       synthetic: s.synthetic,
@@ -317,8 +384,8 @@ export class Telemetry {
     this.writer.enqueue(() => {
       if (sessionSnapshot) {
         this.db.run(
-          `INSERT OR IGNORE INTO sessions (id, actor_hash, kind, started_at, last_seen_at, ip_trunc, ip_hash, ua, ua_hash, ua_family, cookie_returned, synthetic, synthetic_run, synthetic_persona, first_path, cohorts_json)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT OR IGNORE INTO sessions (id, actor_hash, kind, started_at, last_seen_at, ip_trunc, ip_hash, ua, ua_hash, ua_family, cookie_returned, synthetic, synthetic_run, synthetic_persona, first_path, cohorts_json, cohort_slug)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           sessionSnapshot.id,
           sessionSnapshot.actor_hash,
           sessionSnapshot.kind,
@@ -335,6 +402,7 @@ export class Telemetry {
           sessionSnapshot.synthetic_persona,
           sessionSnapshot.first_path,
           sessionSnapshot.cohorts_json,
+          sessionSnapshot.cohort_slug,
         );
       }
       if (!this.writer.degraded) {
@@ -363,6 +431,20 @@ export class Telemetry {
       if (edge && meta.pageId) {
         this.db.run('INSERT INTO nav_edges (session_id, from_page, to_page, ts, kind) VALUES (?, ?, ?, ?, ?)', s.id, edge.from, meta.pageId, at, edge.kind);
       }
+      for (const e of edges) {
+        this.db.run(
+          `INSERT OR IGNORE INTO handoff_edges (id, ts, kind, hop, token, from_session, from_actor, from_family, to_session, to_actor, to_family, page_id, section, target_path, seen_in, delta_ms, confidence, candidates_json, synthetic)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          edgeId(e), e.ts, e.kind, e.hop, e.token, e.from.session, e.from.actor, e.from.family, e.to.session, e.to.actor, e.to.family, e.pageId, e.section, e.targetPath, e.seenIn, e.deltaMs, e.confidence, e.candidates ? JSON.stringify(e.candidates) : null, e.synthetic,
+        );
+      }
+      if (agentQuery) {
+        this.db.run(
+          `INSERT INTO agent_queries (ts, session_id, actor_hash, endpoint, method, complete, query_text, caller_role, upstream_context, verification_token, origin_session_id, token_issued, params_json, body_text, headers_json, status, synthetic)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          at, s.id, s.actorHash, agentQuery.endpoint, agentQuery.method, agentQuery.complete, agentQuery.query, agentQuery.callerRole, agentQuery.upstreamContext, agentQuery.verificationToken, agentQuery.originToken?.sessionId ?? null, agentQuery.tokenIssued, JSON.stringify(agentQuery.params), agentQuery.bodyText, agentHeaders, agentQuery.status, s.synthetic,
+        );
+      }
     });
 
     this.bus.publish({
@@ -380,7 +462,39 @@ export class Telemetry {
       canaries_seen: enriched.length,
       canaries_exposed: exposed.length,
       is_new_session: isNew,
+      handoffs: edges.length,
+      agent_query: Boolean(agentQuery),
     });
+  }
+
+  private familyOf(sessionId: string): string | null {
+    const live = this.sessions.get(sessionId);
+    if (live) return live.uaFamily;
+    try {
+      return this.db.get<{ ua_family: string | null }>('SELECT ua_family FROM sessions WHERE id = ?', sessionId)?.ua_family ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  // the cohort matcher. by slug when the url carries one, by crawler precursor otherwise; null when nothing fits
+  private attribute(req: Req, s: SessionState, meta: ResMeta, at: number): CohortMatch | null {
+    const pageId = meta.pageId ?? null;
+    try {
+      const slug = req.query.get('cv');
+      if (slug && /^[0-9a-z]{6}$/.test(slug)) {
+        const parents = pageId ? this.parentsOf(pageId) : [];
+        const m = attributeBySlug(this.db, { slug, ts: at, sessionId: s.id, actorHash: s.actorHash, parents });
+        if (m.top) return m;
+      }
+      if (pageId) {
+        const m = attributeByPrecursor(this.db, { pageId, ts: at, sessionId: s.id, actorHash: s.actorHash });
+        if (m.top) return m;
+      }
+    } catch (e) {
+      this.log.debug('cohort attribution failed', { err: String(e) });
+    }
+    return null;
   }
 
   private enrichSighting(sg: Sighting, s: SessionState, at: number): Sighting & { crossSession: boolean; crossActor: boolean; exposureSession: string | null; deltaMs: number | null } {
@@ -428,9 +542,9 @@ export class Telemetry {
       const snap = snapshotForUpdate(s);
       this.writer.enqueue(() => {
         this.db.run(
-          `UPDATE sessions SET last_seen_at = ?, kind = ?, cookie_returned = ?, n_requests = ?, n_pages = ?, n_unique_pages = ?, n_errors = ?, n_head = ?, n_post = ?, n_disallowed = ?, n_subresources = ?, n_machine = ?, max_depth = ?, first_path = ?, last_path = ?, first_referer_host = ?, cohorts_json = ?, ua_family = ?
+          `UPDATE sessions SET last_seen_at = ?, kind = ?, cookie_returned = ?, n_requests = ?, n_pages = ?, n_unique_pages = ?, n_errors = ?, n_head = ?, n_post = ?, n_disallowed = ?, n_subresources = ?, n_machine = ?, max_depth = ?, first_path = ?, last_path = ?, first_referer_host = ?, cohorts_json = ?, cohort_slug = ?, ua_family = ?
            WHERE id = ?`,
-          snap.last_seen_at, snap.kind, snap.cookie_returned, snap.n_requests, snap.n_pages, snap.n_unique_pages, snap.n_errors, snap.n_head, snap.n_post, snap.n_disallowed, snap.n_subresources, snap.n_machine, snap.max_depth, snap.first_path, snap.last_path, snap.first_referer_host, snap.cohorts_json, snap.ua_family, s.id,
+          snap.last_seen_at, snap.kind, snap.cookie_returned, snap.n_requests, snap.n_pages, snap.n_unique_pages, snap.n_errors, snap.n_head, snap.n_post, snap.n_disallowed, snap.n_subresources, snap.n_machine, snap.max_depth, snap.first_path, snap.last_path, snap.first_referer_host, snap.cohorts_json, snap.cohort_slug, snap.ua_family, s.id,
         );
       });
     }
@@ -509,6 +623,7 @@ function snapshotForInsert(s: SessionState) {
     synthetic_persona: s.syntheticPersona,
     first_path: s.firstPath,
     cohorts_json: Object.keys(s.cohorts).length ? JSON.stringify(s.cohorts) : null,
+    cohort_slug: Object.keys(s.cohorts).length ? slugFor(s.cohorts) : null,
   };
 }
 
@@ -531,6 +646,24 @@ function snapshotForUpdate(s: SessionState) {
     last_path: s.lastPath,
     first_referer_host: s.firstRefererHost,
     cohorts_json: Object.keys(s.cohorts).length ? JSON.stringify(s.cohorts) : null,
+    cohort_slug: Object.keys(s.cohorts).length ? slugFor(s.cohorts) : null,
     ua_family: s.uaFamily,
   };
+}
+
+// old rows get the slug too; runs once at boot and is a no-op afterwards
+export function backfillCohortSlugs(db: Db, log: Logger): number {
+  const rows = db.all<{ id: string; cohorts_json: string }>('SELECT id, cohorts_json FROM sessions WHERE cohort_slug IS NULL AND cohorts_json IS NOT NULL LIMIT 50000');
+  if (!rows.length) return 0;
+  db.transaction(() => {
+    for (const r of rows) {
+      try {
+        db.run('UPDATE sessions SET cohort_slug = ? WHERE id = ?', slugFor(JSON.parse(r.cohorts_json) as Record<string, string>), r.id);
+      } catch {
+        // a row with unparsable cohorts stays unslugged
+      }
+    }
+  });
+  log.info('backfilled cohort slugs', { rows: rows.length });
+  return rows.length;
 }

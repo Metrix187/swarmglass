@@ -12,6 +12,9 @@ export function purgeOlderThan(db: Db, days: number, log: Logger): Record<string
     out.discoveries = db.run('DELETE FROM page_discoveries WHERE ts < ?', cutoff).changes;
     out.edges = db.run('DELETE FROM nav_edges WHERE ts < ?', cutoff).changes;
     out.exposures = db.run('DELETE FROM canary_exposures WHERE first_at < ?', cutoff).changes;
+    out.tokens = db.run('DELETE FROM session_tokens WHERE last_issued_at < ?', cutoff).changes;
+    out.handoff_edges = db.run('DELETE FROM handoff_edges WHERE ts < ?', cutoff).changes;
+    out.agent_queries = db.run('DELETE FROM agent_queries WHERE ts < ?', cutoff).changes;
     out.sessions = db.run('DELETE FROM sessions WHERE last_seen_at < ?', cutoff).changes;
     out.clusters = db.run('DELETE FROM clusters WHERE window_end < ?', cutoff).changes;
     out.console_sessions = db.run('DELETE FROM console_sessions WHERE expires_at < ?', Date.now()).changes;

@@ -127,6 +127,75 @@
     return canvas;
   }
 
+
+  // ---------- the session graph: shared renderers ----------
+  function labelTag(l) {
+    const kind = l.split(':')[0];
+    const cls = { delegated_swarm_fetch: 'bad', cross_session_handoff: 'rose', handoff_origin: 'lilac', crawler_precursor: 'lilac', cohort_match: 'lilac', ua_spoof_suspected: 'warn', prompt_echo: 'rose', hop_chain: 'rose', swarm_member: 'bad', cluster_member: '', canary_cross_session: 'rose' }[kind];
+    const m = l.match(/^(cross_session_handoff|handoff_origin):(SW-[0-9A-F]{8})$/);
+    if (m) return link('#/handoffs?edge=' + m[2], tag(l.replace(/_/g, ' '), cls || ''));
+    const sw = l.match(/^(swarm_member|cluster_member):(.+)$/);
+    if (sw) return link('#/cluster/' + sw[2], tag(l.replace(/_/g, ' '), cls || ''));
+    return tag(l.replace(/_/g, ' '), cls || '');
+  }
+  function describeLabel(l) {
+    const [kind, ...rest] = l.split(':'); const arg = rest.join(':');
+    switch (kind) {
+      case 'delegated_swarm_fetch': return 'a request or two, no cookie, nothing rendered, under 50ms, landing cold on something deep: and the graph links it to another session. a delegated fetch, not an unknown';
+      case 'cross_session_handoff': return ['presented a per-session token minted for another session (edge ', link('#/handoffs?edge=' + arg, arg), '): it was handed the url'];
+      case 'handoff_origin': return ['a token minted for this session was presented by another one (edge ', link('#/handoffs?edge=' + arg, arg), '): this session is upstream of a hand-off'];
+      case 'crawler_precursor': return `a declared crawler (${arg.split('@')[0]}) read the same page ${arg.split('@')[1] || ''} earlier from another address`;
+      case 'cohort_match': return `the url's cv= watermark matched the arm vector of an upstream session (${arg.split(':').pop()} of the distribution)`;
+      case 'ua_spoof_suspected': return `a browser user-agent (${arg.replace('_no_subresources', '')}) on a stateless fetch with no sec-fetch headers and no sub-resources: the string is not what fetched the page`;
+      case 'prompt_echo': return `called the ${arg.replace('_', '.').replace(':incomplete', '')} tool${arg.endsWith(':incomplete') ? ' without every required field' : ' with caller role and upstream context'}`;
+      case 'hop_chain': return `carried a breadcrumb key as far as ${arg.replace(/_/g, ' ')}`;
+      case 'swarm_member': return ['member of distributed pool ', link('#/cluster/' + arg, arg)];
+      case 'cluster_member': return ['member of behavioural cohort ', link('#/cluster/' + arg, arg)];
+      case 'canary_cross_session': return `${arg} canary sighting(s) of ids only another session was shown`;
+      default: return l;
+    }
+  }
+  function graphBadges(gs) {
+    if (!gs) return '';
+    const out = (gs.labels || []).map(labelTag);
+    if (!out.length && gs.delegated) out.push(tag('delegated shape, unlinked', ''));
+    return out;
+  }
+  function edgeKindTag(e) { return e.kind === 'token' ? tag('token · hop ' + (e.hop === null ? '—' : e.hop), 'rose') : e.kind === 'cohort' ? tag('cohort ' + pct(e.confidence), 'lilac') : tag('precursor ' + pct(e.confidence), 'lilac'); }
+  function edgeTable(edges, opts) {
+    if (!edges || !edges.length) return h('p', { class: 'muted' }, (opts && opts.empty) || 'none in range');
+    return table([
+      { label: 'when', render: (r) => fmtTs(r.ts) },
+      { label: 'edge', render: (r) => h('code', { class: 'small', id: 'edge-' + r.id }, r.id) },
+      { label: 'kind', render: (r) => edgeKindTag(r) },
+      { label: 'origin', render: (r) => [sid(r.from_session), ' ', tag(r.from_family || 'none'), ' ', classTag(r.from_class)] },
+      { label: '', render: () => '→' },
+      { label: 'target', render: (r) => [sid(r.to_session), ' ', tag(r.to_family || 'none'), ' ', classTag(r.to_class)] },
+      { label: 'planted in', render: (r) => r.page_id ? [pageLink(r.page_id), r.section ? h('span', { class: 'muted small' }, ' · ' + r.section.replace(/_/g, ' ')) : null] : '—' },
+      { label: 'presented in', render: (r) => r.seen_in ? h('code', { class: 'small' }, r.seen_in) : '—' },
+      { label: 'token', render: (r) => r.token ? h('code', { class: 'small' }, r.token) : '' },
+      { label: 'Δt', render: (r) => r.delta_ms !== null && r.delta_ms !== undefined ? fmtRel(r.delta_ms) : '—' },
+      { label: 'asked for', render: (r) => h('code', { class: 'small' }, (r.target_path || '').slice(0, 48)) },
+    ], edges);
+  }
+  function chainCard(c) {
+    const hops = c.hops.map((hp) => h('div', { class: 'hop' },
+      h('span', { class: 'hopno' }, 'hop ' + hp.hop),
+      h('span', null, sid(hp.from_session), ' ', tag(hp.from_family || 'none'), ' ', h('span', { class: 'muted small' }, hp.from_role), ' ', classTag(hp.from_class)),
+      h('span', { class: 'arrow' }, '→'),
+      h('span', null, sid(hp.to_session), ' ', tag(hp.to_family || 'none'), ' ', h('span', { class: 'muted small' }, hp.to_role), ' ', classTag(hp.to_class)),
+      h('span', { class: 'muted small' }, hp.page_id ? [pageLink(hp.page_id), ' · ', (hp.section || '').replace(/_/g, ' ')] : ''),
+      h('span', { class: 'lag' }, hp.gap_ms !== null ? '+' + fmtRel(hp.gap_ms) + ' after previous hop' : hp.lag_ms !== null ? fmtRel(hp.lag_ms) + ' after minting' : '')));
+    return h('div', { class: 'chain' + (c.complete ? ' complete' : '') }, h('div', { class: 'chainhead' }, c.complete ? tag('complete · reached verify', 'bad') : tag(`partial · ${c.hops.length} hop${c.hops.length === 1 ? '' : 's'}`, 'rose'), ' ', h('span', { class: 'muted small' }, c.roles), ' ', h('span', { class: 'muted small' }, `· ${fmtTs(c.first)} → ${fmtTs(c.last)} · ${fmtRel(c.total_ms)} end to end`)), ...hops);
+  }
+  function scratchTable(rows, opts) {
+    if (!rows || !rows.length) return h('p', { class: 'muted' }, (opts && opts.empty) || 'no captures in range');
+    return h('div', null, rows.map((r) => h('div', { class: 'scratch' + (r.complete ? '' : ' incomplete') },
+      h('div', { class: 'scratchhead' }, h('span', { class: 'muted' }, fmtTs(r.ts)), ' ', tag(r.endpoint.replace(/_/g, '.'), 'rose'), ' ', tag(r.method), ' ', h('span', { class: `st s${String(r.status)[0]}` }, r.status), ' ', r.complete ? tag('complete', 'ok') : tag('missing fields', 'warn'), ' ', opts && opts.noSession ? null : [sid(r.session_id), ' ', tag(r.ua_family || 'none'), ' ', classTag(r.likely_class)], r.origin_session_id ? [' ', tag('key from ' + (r.origin_family || 'another session'), 'lilac'), ' ', sid(r.origin_session_id)] : null, r.token_issued ? h('span', { class: 'muted small' }, ' · issued ' + r.token_issued) : null),
+      kv({ query: r.query_text || '—', 'caller role': r.caller_role || '—', 'upstream context': r.upstream_context || '—', 'verification token': r.verification_token || '—' }),
+      h('details', null, h('summary', { class: 'hint' }, 'everything it sent'), h('pre', null, JSON.stringify({ params: r.params, body: r.body_text, headers: r.headers }, null, 2))))));
+  }
+
   // ---------- views ----------
   const views = {};
   views.overview = async (root) => {
@@ -205,7 +274,7 @@
             h('span', { class: `st s${String(e.status)[0]}` }, e.status),
             h('span', { class: 'mono' }, e.path, e.query ? h('span', { class: 'q' }, '?' + e.query) : null),
             h('span', null, sid(e.session_id), ' ', e.is_new_session ? tag('new', 'rose') : ''),
-            h('span', null, tag(e.ua_family), e.canaries_seen ? tag(`${e.canaries_seen} canary`, 'lilac') : '')));
+            h('span', null, tag(e.ua_family), e.canaries_seen ? tag(`${e.canaries_seen} canary`, 'lilac') : '', e.handoffs ? tag(`${e.handoffs} hand-off`, 'bad') : '', e.agent_query ? tag('prompt-echo', 'rose') : '')));
           while (list.children.length > 200) list.lastChild.remove();
         }
         // the poll only returns things newer than `since`, so the set only has to cover what's on screen.
@@ -244,6 +313,7 @@
       { label: 'first path', render: (r) => h('code', null, (r.first_path || '').slice(0, 40)) },
       { label: 'cohorts', render: (r) => r.cohorts ? Object.entries(r.cohorts).map(([k, v]) => tag(`${k.replace('SGX-', '')}:${v}`, 'lilac')) : '' },
       { label: 'flags', render: (r) => [r.synthetic ? tag('synthetic ' + (r.synthetic_persona || ''), 'warn') : null, r.cluster_id ? link('#/cluster/' + r.cluster_id, r.cluster_id) : null] },
+      { label: 'swarm evidence', render: (r) => graphBadges(r.graph) },
     ], d.rows, { link: (r) => '#/session/' + encodeURIComponent(r.id) }));
     root.appendChild(h('div', { class: 'pagination' }, f.offset > 0 ? h('button', { class: 'ghost', onclick: () => go({ offset: Math.max(0, Number(f.offset) - 100) }) }, '← newer') : null, `offset ${f.offset}`, d.total > Number(f.offset) + 100 ? h('button', { class: 'ghost', onclick: () => go({ offset: Number(f.offset) + 100 }) }, 'older →') : null));
     function go(extra) { location.hash = '#/sessions?' + new URLSearchParams(Object.assign({}, f, extra)).toString(); }
@@ -276,6 +346,19 @@
     }
     grid.appendChild(withSpan(card('pages reached, in order', table([{ label: '#', key: 'order_no', num: true }, { label: 'page', render: (r) => pageLink(r.page_id) }, { label: 'class', render: (r) => tag(r.discover_class || 'visible', r.discover_class && r.discover_class !== 'visible' ? 'rose' : '') }, { label: 'depth', key: 'depth', num: true }, { label: 'via', render: (r) => h('code', null, r.via) }, { label: 't+', render: (r) => fmtRel(r.ts - s.started_at) }], d.discoveries)), 'span6'));
     grid.appendChild(withSpan(card('canaries', h('p', { class: 'hint' }, `${d.exposures.length} exposed · ${d.sightings.length} presented`), d.sightings.length ? table([{ label: 't+', render: (r) => fmtRel(r.ts - s.started_at) }, { label: 'canary', render: (r) => h('code', null, r.canary_id) }, { label: 'in', key: 'seen_in' }, { label: 'flags', render: (r) => [r.cross_session ? tag('cross-session', 'rose') : tag('own exposure', 'ok'), r.cross_actor ? tag('cross-actor', 'bad') : null] }, { label: 'delta', render: (r) => r.delta_ms !== null ? fmtRel(r.delta_ms) : '—' }], d.sightings) : null, h('details', null, h('summary', { class: 'hint' }, 'exposed canaries'), table([{ label: 'canary', render: (r) => h('code', null, r.canary_id) }, { label: 'placement', key: 'placement' }, { label: 't+', render: (r) => fmtRel(r.first_at - s.started_at) }], d.exposures))), 'span6'));
+    // the session graph: what other sessions' requests say about this one
+    const gr = d.graph || null;
+    grid.appendChild(withSpan(card('graph & canary evidence (cross-session signals, each one stated)',
+      gr && gr.labels && gr.labels.length ? h('div', null, h('p', null, gr.labels.map(labelTag)), h('ul', { class: 'evidence' }, gr.labels.map((l) => h('li', null, describeLabel(l))))) : h('p', { class: 'muted' }, gr ? 'no cross-session signal: nothing handed this session a url, nothing it was given came back, no lookup tool was called' : 'not scored yet'),
+      gr && gr.shape ? h('p', { class: 'hint' }, `shape: ${gr.shape.delegated ? 'stateless delegated fetch (≤2 requests, no cookie, nothing rendered, <50ms, cold deep landing)' : gr.shape.cold_deep ? 'cold deep landing, but more than a delegated fetch' : 'not a cold deep landing'}${gr.shape.ua_spoof ? ' · browser string without browser headers' : ''}`) : null,
+      h('p', { class: 'hint' }, 'heuristics are research labels with stated evidence, never identity claims. a label here says what was observed across sessions; it does not say who sent any of it.')), 'span6'));
+    const ho = d.handoffs || { edges_in: [], edges_out: [] };
+    grid.appendChild(withSpan(card(`hand-offs: ${ho.edges_in.length} in · ${ho.edges_out.length} out (directed edges this session is part of)`,
+      ho.edges_in.length ? [h('h3', null, 'handed to this session'), edgeTable(ho.edges_in)] : null,
+      ho.edges_out.length ? [h('h3', null, 'handed out by this session'), edgeTable(ho.edges_out)] : null,
+      !ho.edges_in.length && !ho.edges_out.length ? h('p', { class: 'muted' }, 'no directed edge touches this session') : null), 'span6'));
+    if ((d.agent_queries || []).length) grid.appendChild(withSpan(card('prompt-echo captures: what this session told the lookup tools', scratchTable(d.agent_queries, { noSession: true })), 'span12'));
+    if ((d.tokens_minted || []).length) grid.appendChild(withSpan(card('per-session tokens minted for this session (a later presenter was handed the url by this session)', table([{ label: 'token', render: (r) => h('code', null, r.token) }, { label: 'planted in', render: (r) => [r.page_id ? pageLink(r.page_id) : '—', ' ', h('span', { class: 'muted small' }, (r.section || '').replace(/_/g, ' '))] }, { label: 'hop', key: 'hop', num: true }, { label: 'cv', render: (r) => h('code', { class: 'small' }, r.cohort_slug || '') }, { label: 't+', render: (r) => fmtRel(r.issued_at - s.started_at) }, { label: 'renders', key: 'issue_count', num: true }, { label: 'presented by others', render: (r) => r.presented_by_others ? tag(String(r.presented_by_others), 'bad') : '0' }], d.tokens_minted)), 'span12'));
     if (d.similar.length) grid.appendChild(withSpan(card('similar sessions (page-set jaccard ≥ 0.3, ±7 days)', table([{ label: 'session', render: (r) => sid(r.id) }, { label: 'jaccard', key: 'jaccard', num: true }, { label: 'same actor', render: (r) => r.same_actor ? tag('yes', 'lilac') : '' }, { label: 'class', render: (r) => classTag(r.likely_class) }, { label: 'ua', render: (r) => tag(r.ua_family || '') }, { label: 'started', render: (r) => fmtTs(r.started_at) }], d.similar)), 'span6'));
     if (d.actor_sessions.length) grid.appendChild(withSpan(card('other sessions from the same actor fingerprint', table([{ label: 'session', render: (r) => sid(r.id) }, { label: 'started', render: (r) => fmtTs(r.started_at) }, { label: 'req', key: 'n_requests', num: true }, { label: 'class', render: (r) => classTag(r.likely_class) }], d.actor_sessions)), 'span6'));
     // story timeline
@@ -396,6 +479,9 @@
       if (e.exposure_session_id) edges.push({ from: e.exposure_session_id, to: e.canary_id });
       if (e.session_id) edges.push({ from: e.canary_id, to: e.session_id });
     }
+    const tk = d.tokens || {};
+    g.appendChild(withSpan(card('per-session tokens (scope S, placement token: a checksum, build id or reference minted for one session)', kv({ 'minted in range': tk.minted, 'sessions given one': tk.minted_sessions, 'presented by another session': tk.presented_cross_session, 'of which another actor': tk.presented_cross_actor, 'sessions that presented one': tk.presenting_sessions }), (tk.by_hop || []).length ? table([{ label: 'hop', key: 'hop', num: true }, { label: 'edges', key: 'n', num: true }, { label: 'mean lag', render: (r) => r.mean_lag_ms ? fmtRel(r.mean_lag_ms) : '—' }], tk.by_hop) : null, (tk.transitions || []).length ? h('p', null, 'ua transitions: ', tk.transitions.map((t) => tag(`${t.t} ×${t.n}`, 'rose'))) : null, (tk.by_section || []).length ? h('details', null, h('summary', { class: 'hint' }, 'minted by section'), table([{ label: 'section', render: (r) => r.section.replace(/_/g, ' ') }, { label: 'hop', key: 'hop', num: true }, { label: 'minted', key: 'n', num: true }], tk.by_section)) : null), 'span4'));
+    g.appendChild(withSpan(card('directed edges from token sightings (origin session → presenting session)', edgeTable(d.directed, { empty: 'no per-session token has come back from another session in range' })), 'span12'));
     g.appendChild(withSpan(card('propagation graph (rose = canary, pink = exposed session, purple = presenting session, ink = external)', nodes.length ? forceGraph(nodes, edges) : h('p', { class: 'muted' }, 'no cross-session or external sightings in range')), 'span8'));
     g.appendChild(withSpan(card('recent sightings', table([{ label: 'when', render: (r) => fmtTs(r.ts) }, { label: 'canary', render: (r) => h('code', null, r.canary_id) }, { label: 'origin', render: (r) => [tag(r.scope || '?'), tag(r.placement || '?'), r.page_id ? pageLink(r.page_id) : null] }, { label: 'seen in', key: 'seen_in' }, { label: 'session', render: (r) => r.session_id ? sid(r.session_id) : tag('external', 'lilac') }, { label: 'exposed to', render: (r) => r.exposure_session_id ? sid(r.exposure_session_id) : '—' }, { label: 'delta', render: (r) => r.delta_ms !== null ? fmtRel(r.delta_ms) : '—' }, { label: 'flags', render: (r) => [r.cross_session ? tag('cross-session', 'rose') : null, r.cross_actor ? tag('cross-actor', 'bad') : null, r.external ? tag('external', 'lilac') : null] }, { label: 'context', render: (r) => h('code', null, (r.detail || '').slice(0, 60)) }], d.recent)), 'span12'));
     const form = h('div', { class: 'filters' }, h('input', { type: 'text', name: 'canary_id', placeholder: 'QUANTARA-SWARMGLASS-R7-4F91C2', size: 34 }), h('input', { type: 'text', name: 'source', placeholder: 'source (search engine, forum, model output…)', size: 30 }), h('input', { type: 'text', name: 'url', placeholder: 'url (optional)', size: 30 }), h('input', { type: 'text', name: 'note', placeholder: 'note', size: 30 }), h('button', { onclick: async () => { const body = {}; for (const el of form.querySelectorAll('input')) body[el.name] = el.value; const r = await api('/api/canaries/external', { method: 'POST', body: JSON.stringify(body) }); msg.textContent = r.ok ? 'recorded' : 'error: ' + r.error; if (r.ok) setTimeout(() => route(), 800); } }, 'record external sighting'));
@@ -446,6 +532,8 @@
     const d = await api(`/api/motifs?${qs()}&n=${n}`);
     root.append(h('h1', null, 'repeated motifs'), h('div', { class: 'filters' }, 'n-gram length ', sel('n', ['2', '3', '4', '5'], String(n)), h('button', { onclick: (ev) => { location.hash = '#/motifs?n=' + ev.target.parentNode.querySelector('select').value; } }, 'apply')), note('request sequences that appear in more than one session. shared motifs across different actors are a soft coordination hint — or just the shape of the site.'));
     root.appendChild(card('motifs', table([{ label: 'sequence', render: (r) => h('code', null, r.motif) }, { label: 'sessions', key: 'sessions', num: true }, { label: 'sample', render: (r) => r.sample.map((s) => [sid(s), ' ']) }], d.motifs)));
+    const hc = d.hop_chains || { chains: [], motifs: [], complete: 0 };
+    root.appendChild(card(`breadcrumb chains across sessions: ${hc.chains.length} in range · ${hc.complete} complete`, note('a motif that crosses sessions: hop 1 (lore page → machine export), hop 2 (export → activity feed), hop 3 (feed → verify endpoint), each hop taken by a different session. the role sequence is by declared ua category; the lag is between hops.'), hc.motifs.length ? table([{ label: 'role sequence', render: (r) => h('code', null, r.sequence) }, { label: 'families (sample)', render: (r) => h('span', { class: 'small' }, r.families) }, { label: 'chains', key: 'chains', num: true }, { label: 'complete', key: 'complete', num: true }, { label: 'median end to end', render: (r) => r.median_total_ms !== null ? fmtRel(r.median_total_ms) : '—' }], hc.motifs) : h('p', { class: 'muted' }, 'no chain in range'), hc.chains.slice(0, 12).map(chainCard), hc.chains.length ? h('p', { class: 'hint' }, link('#/handoffs', 'every chain and edge, on the hand-offs page →')) : null));
   };
 
   views.anomalies = async (root) => {
@@ -502,7 +590,7 @@
     g.appendChild(withSpan(card('canaries presented', d.sightings.length ? table([{ label: 'when', render: (r) => fmtTs(r.ts) }, { label: 'session', render: (r) => sid(r.session_id) }, { label: 'canary', render: (r) => h('code', null, r.canary_id) }, { label: 'in', key: 'seen_in' }, { label: 'shown where', render: (r) => r.carried_from ? [tag('carried across sessions', 'bad'), ' from ', sid(r.carried_from), ' ', tag(r.carried_placement, 'lilac'), ' ', h('span', { class: 'muted' }, fmtRel(r.carried_after_ms) + ' earlier')] : (r.cross_session ? tag('never shown to this actor: another actor, a cache, or an index', 'rose') : tag('same session', 'ok')) }], d.sightings) : h('p', { class: 'muted' }, 'this actor never presented a canary')), 'span12'));
   };
 
-  views.handoffs = async (root) => {
+  views.handoffs = async (root, params) => {
     const d = await api(`/api/handoffs?${qs()}`);
     root.append(h('h1', null, 'hand-offs'), note('where did a visitor get a url it was never shown? a reach is explained when the actor itself, in any session, had already been served a page that links there or the channel that lists it. an unexplained reach whose linking page was served to a different actor shortly before is a hand-off between the two: one queue, many addresses. the entry page, everything one link from it and everything a machine channel lists are left out, anybody can know those.'));
     const g = h('div', { class: 'grid' }); root.appendChild(g);
@@ -516,7 +604,15 @@
       { label: 'first → last', render: (r) => r.first ? `${fmtTs(r.first)} → ${fmtTs(r.last)}` : '—' },
       { label: 'members', render: (r) => r.actors.slice(0, 12).map((a) => [link('#/actor/' + encodeURIComponent(a.actor), a.actor.slice(0, 8)), h('span', { class: 'muted small' }, ` ${a.ua_family || 'none'} `)]) },
     ], d.components) : h('p', { class: 'muted' }, 'no hand-offs in range')), 'span12'));
-    g.appendChild(withSpan(card('recent hand-offs', d.sample.length ? table([{ label: 'when', render: (r) => fmtTs(r.ts) }, { label: 'shown to', render: (r) => [sid(r.from_session), ' ', tag(r.from_family || 'none')] }, { label: 'fetched by', render: (r) => [sid(r.to_session), ' ', tag(r.to_family || 'none')] }, { label: 'page', render: (r) => pageLink(r.page) }, { label: 'linked from', render: (r) => pageLink(r.parent) }, { label: 'lag', render: (r) => fmtRel(r.lag_ms) }], d.sample) : h('p', { class: 'muted' }, 'none')), 'span12'));
+    g.appendChild(withSpan(card('recent hand-offs (inferred from the link graph)', d.sample.length ? table([{ label: 'when', render: (r) => fmtTs(r.ts) }, { label: 'shown to', render: (r) => [sid(r.from_session), ' ', tag(r.from_family || 'none')] }, { label: 'fetched by', render: (r) => [sid(r.to_session), ' ', tag(r.to_family || 'none')] }, { label: 'page', render: (r) => pageLink(r.page) }, { label: 'linked from', render: (r) => pageLink(r.parent) }, { label: 'lag', render: (r) => fmtRel(r.lag_ms) }], d.sample) : h('p', { class: 'muted' }, 'none')), 'span12'));
+    // the recorded graph: per-session tokens that came back from another session are certain edges; cohort and
+    // precursor edges are a distribution over who could have handed the url over
+    const et = d.edge_totals || {};
+    const wanted = params && params.edge ? params.edge : null;
+    const edges = wanted ? (d.edges || []).filter((e) => e.id === wanted).concat((d.edges || []).filter((e) => e.id !== wanted)) : (d.edges || []);
+    g.appendChild(withSpan(card(`directed canary edges: ${et.token || 0} token (certain) · ${et.cohort || 0} cohort · ${et.precursor || 0} precursor`, wanted ? h('p', { class: 'hint' }, 'edge ', h('code', null, wanted), ' first', (d.edges || []).some((e) => e.id === wanted) ? '' : ' (not in range)') : null, note('a token edge: session B presented a per-session token that was minted for session A on a specific page section. the ua transition on the edge (bingbot → safari) is the pipeline changing hands. a cohort edge: B landed cold on a url carrying the cv= arm-vector watermark served to A. a precursor edge: no watermark, but a declared crawler read the same page from another address shortly before.'), edgeTable(edges)), 'span12'));
+    g.appendChild(withSpan(card(`multi-hop breadcrumb chains: ${(d.chains || []).length} in range · ${d.chains_complete || 0} reached the verify endpoint`, note("hop 1: a visible lore page points at a machine export under a per-session reference. hop 2: the export carries structured records and a verification key pointing at an operator's activity feed. hop 3: the feed points at /api/v1/registry/verify, which needs caller_role and upstream_context. each hop handled by a different session is a role split in the pipeline that fetched it."), (d.chains || []).length ? d.chains.map(chainCard) : h('p', { class: 'muted' }, 'no chain in range')), 'span12'));
+    if ((d.chain_motifs || []).length) g.appendChild(withSpan(card('chain motifs: who handled which hop, by declared role', table([{ label: 'role sequence', render: (r) => h('code', null, r.sequence) }, { label: 'families (sample)', render: (r) => h('span', { class: 'small' }, r.families) }, { label: 'chains', key: 'chains', num: true }, { label: 'complete', key: 'complete', num: true }, { label: 'median end to end', render: (r) => r.median_total_ms !== null ? fmtRel(r.median_total_ms) : '—' }], d.chain_motifs)), 'span12'));
   };
 
   views.llm = async (root) => {
@@ -540,6 +636,13 @@
     ], d.families)));
     root.appendChild(card('pools that carry an ai family', d.pools.length ? table([{ label: 'pool', render: (r) => link('#/cluster/' + r.id, r.id) }, { label: 'label', key: 'label' }, { label: 'sessions', key: 'size', num: true }, { label: 'families', render: (r) => ((r.summary || {}).families || [(r.summary || {}).ua_family]).map((f) => tag(f || '')) }, { label: 'window', render: (r) => `${fmtTs(r.window_start)} → ${fmtTs(r.window_end)}` }], d.pools) : h('p', { class: 'muted' }, 'none in range')));
     root.appendChild(h('p', { class: 'hint' }, `families the console knows as ai crawlers or fetchers: ${d.ai_families_known.join(', ')}`));
+    const st = d.scratchpad_totals || {};
+    root.appendChild(card(`captured agent scratchpads: ${st.captures || 0} calls from ${st.sessions || 0} sessions · ${st.complete || 0} with every required field · ${st.with_upstream_token || 0} carrying a key from another session`,
+      note("the lookup tools (colony.lookup, registry.verify, Special:AgentQuery) are described everywhere a tool-using agent looks: openapi, the tools manifest, json-ld SearchAction, an html form, an mcp-style definition. the schema says caller_role and upstream_context are required, so a compliant call carries the orchestrator's instruction to the sub-agent. this is that text, verbatim and bounded. nothing here is acted on."),
+      st.roles && st.roles.length ? h('p', null, 'caller roles seen: ', st.roles.map((r) => tag(`${r.caller_role} ${r.n}`, 'lilac'))) : null,
+      st.by_endpoint ? h('p', { class: 'hint' }, 'by endpoint: ' + Object.entries(st.by_endpoint).map(([k, v]) => `${k.replace('_', '.')} ${v}`).join(' · ')) : null,
+      scratchTable(d.scratchpads)));
+    root.appendChild(card('directed canary edges touching any session in range (token hand-offs; the ua transition is the pipeline changing hands)', edgeTable(d.directed_edges, { empty: 'no token presented by a session other than the one it was minted for' })));
   };
 
   views.synthetic = async (root) => {
